@@ -1,0 +1,56 @@
+{
+  "settings": {
+    "gcodeRoot": "C:\\UCCNC\\Maestro\\GCode",
+    "mediaRoot": "C:\\UCCNC\\Maestro\\Media",
+    "testMode": false,
+    "useMachineTcFields": false,
+    "useSafeZForTc": true,
+    "toolChangePos": { "x": 0, "y": 0, "z": 0, "zSafe": 0 },
+    "probe": {
+      "xPlate": 0,
+      "yPlate": 0,
+      "dist": 0,
+      "feedFast": 0,
+      "feedSlow": 0,
+      "plateThickness": 0,
+      "retractDist": 0,
+      "plateRapidZ": 0,
+      "plateZero": 0,
+      "plateRapid": false
+    }
+  },
+  "projects": [
+    {
+      "id": "SAMPLE_PROJECT",
+      "name": "Sample Project",
+      "description": "Example workflow - edit or replace these steps in the Admin tab.",
+      "image": "",
+      "steps": [
+        {
+          "type": "op",
+          "label": "Example Operation",
+          "file": "Sample/example.nc",
+          "tool": { "num": 1, "type": "Flat endmill", "diameter": "0.25\"", "desc": "Example bit", "rpm": 18000 },
+          "minutes": 10,
+          "instructions": "Mount stock and verify work holding before running.",
+          "photo": "",
+          "video": "",
+          "preOps": ["moveToolChange", "toolPrompt", "autoZero"],
+          "postOps": ["spindleOff", "moveToolChange"]
+        },
+        {
+          "type": "gate",
+          "label": "Inspect / Flip",
+          "file": "",
+          "tool": { "num": 1, "type": "", "diameter": "", "desc": "", "rpm": 0 },
+          "minutes": 0,
+          "instructions": "STOP. Inspect the part or flip the stock, then confirm to continue.",
+          "photo": "",
+          "video": "",
+          "preOps": [],
+          "postOps": []
+        }
+      ]
+    }
+  ]
+}
