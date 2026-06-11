@@ -28,8 +28,8 @@ No Visual Studio or .NET SDK install is required — the build uses the in-box `
 ## Build from source
 
 ```powershell
-git clone <repo-url> cnc-automation
-cd cnc-automation\plugin
+git clone https://github.com/Jaromin-LLC/uccnc-maestro.git
+cd uccnc-maestro\plugin
 .\build-plugin.ps1
 ```
 
