@@ -676,6 +676,7 @@ namespace Plugins
             _runAllButton.Enabled = !running;
             _resetButton.Enabled = !running;
             _abortButton.Enabled = running;
+            _projectCombo.Enabled = !running;
             UpdateRunButtonStates();
         }
 

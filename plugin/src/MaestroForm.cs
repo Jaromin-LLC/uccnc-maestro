@@ -10,6 +10,8 @@ namespace Plugins
     {
         private readonly UCCNCplugin _plugin;
         private readonly TabControl _tabs;
+        private readonly TabPage _operatorPage;
+        private readonly TabPage _adminPage;
         private readonly OperatorView _operatorView;
         private readonly AdminView _adminView;
         private readonly Label _liveStatusLabel;
@@ -56,16 +58,27 @@ namespace Plugins
             _operatorView = new OperatorView(this, Engine);
             _adminView = new AdminView(this, Engine);
 
-            var opPage = new TabPage("Operator") { Padding = new Padding(8) };
+            _operatorPage = new TabPage("Operator") { Padding = new Padding(8) };
+            var opPage = _operatorPage;
             opPage.Controls.Add(_operatorView);
             _operatorView.Dock = DockStyle.Fill;
 
-            var adminPage = new TabPage("Admin") { Padding = new Padding(8) };
-            adminPage.Controls.Add(_adminView);
+            _adminPage = new TabPage("Admin") { Padding = new Padding(8) };
+            _adminPage.Controls.Add(_adminView);
             _adminView.Dock = DockStyle.Fill;
 
             _tabs.TabPages.Add(opPage);
-            _tabs.TabPages.Add(adminPage);
+            _tabs.TabPages.Add(_adminPage);
+
+            // Lock the Admin tab while an operation is running.
+            _tabs.Selecting += Tabs_Selecting;
+            Engine.RunningChanged += running =>
+            {
+                if (IsDisposed) return;
+                _adminPage.Text = running ? "Admin (locked)" : "Admin";
+                if (running && _tabs.SelectedTab == _adminPage)
+                    _tabs.SelectedTab = _operatorPage;
+            };
 
             Controls.Add(_tabs);
             Controls.Add(_liveStatusLabel);
@@ -80,6 +93,15 @@ namespace Plugins
 
             Load += MaestroForm_Load;
             FormClosing += MaestroForm_FormClosing;
+        }
+
+        private void Tabs_Selecting(object sender, TabControlCancelEventArgs e)
+        {
+            if (e.TabPage == _adminPage && Engine.IsRunning)
+            {
+                e.Cancel = true;
+                _liveStatusLabel.Text = "Admin is locked while an operation is running.";
+            }
         }
 
         private void MaestroForm_Load(object sender, EventArgs e)
