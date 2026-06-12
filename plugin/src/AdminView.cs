@@ -22,12 +22,13 @@ namespace Plugins
         private TextBox _projectIdBox;
         private TextBox _projectNameBox;
         private TextBox _projectDescBox;
+        private TextBox _projectImageBox;
+        private PictureBox _projectImagePreview;
         private TextBox _stepLabelBox;
         private ComboBox _stepTypeCombo;
         private TextBox _stepFileBox;
         private TextBox _stepInstructionsBox;
         private ComboBox _stepToolCombo;
-        private PictureBox _stepToolPreview;
         private Label _libToolNumLabel;
         private TextBox _libToolTypeBox;
         private TextBox _libToolDiaBox;
@@ -51,7 +52,11 @@ namespace Plugins
         private Panel _projectOverridePanel;
         private MachineSettingsFieldSet _projectOverrideFields;
         private SplitContainer _toolsSplit;
+        private SplitContainer _stepsSplit;
+        private TabControl _editorTabs;
+        private Button _saveBtn;
         private Label _saveStatusLabel;
+        private bool _dirty;
 
         private WorkflowProject _selectedProject;
         private int _selectedStepIndex = -1;
@@ -113,7 +118,7 @@ namespace Plugins
             leftPanel.Controls.Add(leftButtons);
             split.Panel1.Controls.Add(leftPanel);
 
-            var rightSplit = new SplitContainer
+            _stepsSplit = new SplitContainer
             {
                 Dock = DockStyle.Fill,
                 Orientation = Orientation.Horizontal,
@@ -140,11 +145,23 @@ namespace Plugins
             stepPanel.Controls.Add(_stepList);
             stepPanel.Controls.Add(new Label { Text = "Steps", Dock = DockStyle.Top, Height = 20 });
             stepPanel.Controls.Add(stepButtons);
-            rightSplit.Panel1.Controls.Add(stepPanel);
+            _stepsSplit.Panel1.Controls.Add(stepPanel);
+            _stepsSplit.Panel2.Controls.Add(BuildStepEditorPanel());
 
-            var editorPanel = BuildEditorPanel();
-            rightSplit.Panel2.Controls.Add(editorPanel);
-            split.Panel2.Controls.Add(rightSplit);
+            _editorTabs = new TabControl { Dock = DockStyle.Fill };
+            var projectTab = new TabPage("Project") { Padding = new Padding(4) };
+            projectTab.Controls.Add(BuildProjectSettingsPanel());
+            var stepsTab = new TabPage("Steps") { Padding = new Padding(4) };
+            stepsTab.Controls.Add(_stepsSplit);
+            _editorTabs.TabPages.Add(projectTab);
+            _editorTabs.TabPages.Add(stepsTab);
+            _editorTabs.SelectedIndexChanged += (s, e) =>
+            {
+                if (_editorTabs.SelectedTab == stepsTab)
+                    SafeSetSplitter(_stepsSplit, 170, 130, 220);
+            };
+
+            split.Panel2.Controls.Add(_editorTabs);
 
             var projectsPage = new TabPage("Projects") { Padding = new Padding(4) };
             projectsPage.Controls.Add(split);
@@ -162,19 +179,21 @@ namespace Plugins
             adminTabs.TabPages.Add(settingsPage);
 
             var bottomPanel = new Panel { Dock = DockStyle.Bottom, Height = 44, Padding = new Padding(8) };
-            var saveBtn = MakeActionButton("Save All", Color.FromArgb(0, 122, 204));
-            saveBtn.Location = new Point(8, 8);
-            saveBtn.Click += SaveBtn_Click;
+            _saveBtn = MakeActionButton("Save All", Color.FromArgb(0, 122, 204));
+            _saveBtn.Location = new Point(8, 8);
+            _saveBtn.Click += SaveBtn_Click;
             _saveStatusLabel = new Label { Location = new Point(120, 12), AutoSize = true, Text = "" };
-            bottomPanel.Controls.Add(saveBtn);
+            bottomPanel.Controls.Add(_saveBtn);
             bottomPanel.Controls.Add(_saveStatusLabel);
+            UpdateSaveButtonState();
 
             Controls.Add(adminTabs);
 
             Load += (s, e) =>
             {
                 SafeSetSplitter(split, 190, 100, 200);
-                SafeSetSplitter(rightSplit, 200, 80, 80);
+                if (_stepsSplit != null)
+                    SafeSetSplitter(_stepsSplit, 170, 130, 220);
                 if (_toolsSplit != null)
                     SafeSetSplitter(_toolsSplit, 220, 120, 200);
             };
@@ -197,86 +216,41 @@ namespace Plugins
             return btn;
         }
 
-        private Panel BuildEditorPanel()
+        private Panel BuildProjectSettingsPanel()
         {
             var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(8) };
             int y = 8;
 
-            scroll.Controls.Add(MkLabel("Project ID", 8, y));
-            _projectIdBox = MkText(120, 8, 220); y += 28;
-            scroll.Controls.Add(_projectIdBox);
-            scroll.Controls.Add(MkLabel("Project Name", 8, y));
-            _projectNameBox = MkText(120, y, 220); y += 28;
-            scroll.Controls.Add(_projectNameBox);
-            scroll.Controls.Add(MkLabel("Description", 8, y));
-            _projectDescBox = MkText(120, y, 420, 40, true); y += 48;
-            scroll.Controls.Add(_projectDescBox);
-
-            scroll.Controls.Add(MkLabel("Step Label", 8, y));
-            _stepLabelBox = MkText(120, y, 320); y += 28;
-            scroll.Controls.Add(_stepLabelBox);
-            scroll.Controls.Add(MkLabel("Step Type", 8, y));
-            _stepTypeCombo = new ComboBox { Location = new Point(120, y), Width = 120, DropDownStyle = ComboBoxStyle.DropDownList };
-            _stepTypeCombo.Items.AddRange(new object[] { "op", "gate" });
-            scroll.Controls.Add(_stepTypeCombo); y += 28;
-            scroll.Controls.Add(MkLabel("G-code File", 8, y));
-            _stepFileBox = MkText(120, y, 320); y += 28;
-            scroll.Controls.Add(_stepFileBox);
-            _toolTips.SetToolTip(_stepFileBox, "Full path to the G-code file run for this step (e.g. C:\\UCCNC\\Maestro\\GCode\\ProjectA\\op1.nc).");
-            var browseGcodeBtn = new Button { Text = "Browse...", Location = new Point(450, y - 28), Width = 80 };
-            browseGcodeBtn.Click += BrowseGcodeBtn_Click;
-            scroll.Controls.Add(browseGcodeBtn);
-
-            scroll.Controls.Add(MkLabel("Instructions", 8, y));
-            _stepInstructionsBox = MkText(120, y, 420, 70, true); y += 84;
-            scroll.Controls.Add(_stepInstructionsBox);
-
-            scroll.Controls.Add(MkLabel("Tool", 8, y));
-            _stepToolCombo = new ComboBox
+            var projectGroup = new GroupBox
             {
-                Location = new Point(120, y),
-                Width = 320,
-                DropDownStyle = ComboBoxStyle.DropDownList
+                Text = "Project Settings",
+                Location = new Point(8, y),
+                Width = 760,
+                Padding = new Padding(8)
             };
-            _stepToolCombo.SelectedIndexChanged += StepToolCombo_SelectedIndexChanged;
-            scroll.Controls.Add(_stepToolCombo);
-            var newToolBtn = new Button { Text = "New Tool...", Location = new Point(450, y - 2), Width = 90 };
-            newToolBtn.Click += NewToolFromStepBtn_Click;
-            scroll.Controls.Add(newToolBtn);
-            _stepToolPreview = new PictureBox
-            {
-                Location = new Point(550, y - 2),
-                Size = new Size(100, 80),
-                BorderStyle = BorderStyle.FixedSingle,
-                SizeMode = PictureBoxSizeMode.Zoom,
-                BackColor = Color.FromArgb(248, 248, 248)
-            };
-            scroll.Controls.Add(_stepToolPreview);
-            y += 88;
+            int py = 24;
 
-            _photoBox = new TextBox();
+            projectGroup.Controls.Add(MkLabel("Project ID", 12, py));
+            _projectIdBox = MkText(124, py, 220);
+            projectGroup.Controls.Add(_projectIdBox); py += 28;
+            projectGroup.Controls.Add(MkLabel("Project Name", 12, py));
+            _projectNameBox = MkText(124, py, 220);
+            projectGroup.Controls.Add(_projectNameBox); py += 28;
+            projectGroup.Controls.Add(MkLabel("Description", 12, py));
+            _projectDescBox = MkText(124, py, 420, 40, true);
+            projectGroup.Controls.Add(_projectDescBox); py += 48;
 
-            scroll.Controls.Add(MkLabel("Step Photo", 8, y));
-            y += 20;
-            _photoPreview = MakeImagePicker(new Point(8, y), "Click to add\nstep photo",
-                () => PickImageInto(_photoBox, _photoPreview));
-            scroll.Controls.Add(_photoPreview);
-            y += _photoPreview.Height + 10;
+            _projectImageBox = new TextBox { Visible = false };
+            projectGroup.Controls.Add(_projectImageBox);
+            projectGroup.Controls.Add(MkLabel("Project Photo", 560, 24));
+            _projectImagePreview = MakeImagePicker(new Point(560, 44), "Click to add\nproject photo",
+                () => PickImageInto(_projectImageBox, _projectImagePreview));
+            _toolTips.SetToolTip(_projectImagePreview, "Optional photo shown on the Operator panel below the run buttons.");
+            projectGroup.Controls.Add(_projectImagePreview);
+            projectGroup.Height = Math.Max(py, 44 + _projectImagePreview.Height + 12);
 
-            scroll.Controls.Add(MkLabel("Video", 8, y));
-            _videoBox = MkText(120, y, 320);
-            scroll.Controls.Add(_videoBox);
-            var browseVideoBtn = new Button { Text = "Pick Video...", Location = new Point(450, y - 2), Width = 90 };
-            browseVideoBtn.Click += BrowseVideoBtn_Click;
-            scroll.Controls.Add(browseVideoBtn);
-            y += 34;
-
-            scroll.Controls.Add(MkLabel("Pre Ops", 8, y));
-            _preOpsList = new CheckedListBox { Location = new Point(120, y), Size = new Size(220, 100) };
-            scroll.Controls.Add(_preOpsList);
-            scroll.Controls.Add(MkLabel("Post Ops", 350, y));
-            _postOpsList = new CheckedListBox { Location = new Point(430, y), Size = new Size(220, 100) };
-            scroll.Controls.Add(_postOpsList); y += 116;
+            scroll.Controls.Add(projectGroup);
+            y = projectGroup.Bottom + 12;
 
             _projectOverrideGroup = new GroupBox
             {
@@ -307,7 +281,83 @@ namespace Plugins
             _projectOverrideFields = MachineSettingsFieldSet.Create(_projectOverridePanel, ref oy, _toolTips);
             _projectOverrideGroup.Controls.Add(_projectOverridePanel);
             scroll.Controls.Add(_projectOverrideGroup);
-            y += _projectOverrideGroup.Height + 12;
+
+            _projectOverrideFields.HookChanged(ProjectMachineSettingsChanged);
+            _projectIdBox.TextChanged += EditorChanged;
+            _projectNameBox.TextChanged += EditorChanged;
+            _projectDescBox.TextChanged += EditorChanged;
+
+            return scroll;
+        }
+
+        private Panel BuildStepEditorPanel()
+        {
+            var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(8) };
+            int y = 8;
+
+            var stepGroup = new GroupBox
+            {
+                Text = "Step",
+                Location = new Point(8, y),
+                Width = 760,
+                Padding = new Padding(8)
+            };
+            int sy = 24;
+
+            stepGroup.Controls.Add(MkLabel("Step Label", 12, sy));
+            _stepLabelBox = MkText(124, sy, 320);
+            stepGroup.Controls.Add(_stepLabelBox); sy += 28;
+            stepGroup.Controls.Add(MkLabel("Step Type", 12, sy));
+            _stepTypeCombo = new ComboBox { Location = new Point(124, sy), Width = 120, DropDownStyle = ComboBoxStyle.DropDownList };
+            _stepTypeCombo.Items.AddRange(new object[] { "op", "gate" });
+            stepGroup.Controls.Add(_stepTypeCombo); sy += 28;
+            stepGroup.Controls.Add(MkLabel("G-code File", 12, sy));
+            _stepFileBox = MkText(124, sy, 320);
+            stepGroup.Controls.Add(_stepFileBox);
+            _toolTips.SetToolTip(_stepFileBox, "Full path to the G-code file run for this step (e.g. C:\\UCCNC\\Maestro\\GCode\\ProjectA\\op1.nc).");
+            var browseGcodeBtn = new Button { Text = "Browse...", Location = new Point(454, sy - 2), Width = 80 };
+            browseGcodeBtn.Click += BrowseGcodeBtn_Click;
+            stepGroup.Controls.Add(browseGcodeBtn); sy += 28;
+
+            stepGroup.Controls.Add(MkLabel("Instructions", 12, sy));
+            _stepInstructionsBox = MkText(124, sy, 420, 70, true);
+            stepGroup.Controls.Add(_stepInstructionsBox); sy += 84;
+
+            stepGroup.Controls.Add(MkLabel("Tool", 12, sy));
+            _stepToolCombo = new ComboBox
+            {
+                Location = new Point(124, sy),
+                Width = 320,
+                DropDownStyle = ComboBoxStyle.DropDownList
+            };
+            _stepToolCombo.SelectedIndexChanged += StepToolCombo_SelectedIndexChanged;
+            stepGroup.Controls.Add(_stepToolCombo);
+            var newToolBtn = new Button { Text = "New Tool...", Location = new Point(454, sy - 2), Width = 90 };
+            newToolBtn.Click += NewToolFromStepBtn_Click;
+            stepGroup.Controls.Add(newToolBtn);
+            sy += 36;
+
+            _photoBox = new TextBox();
+            stepGroup.Controls.Add(MkLabel("Step Photo", 560, 24));
+            _photoPreview = MakeImagePicker(new Point(560, 44), "Click to add\nstep photo",
+                () => PickImageInto(_photoBox, _photoPreview));
+            stepGroup.Controls.Add(_photoPreview);
+
+            stepGroup.Controls.Add(MkLabel("Video", 12, sy));
+            _videoBox = MkText(124, sy, 320);
+            stepGroup.Controls.Add(_videoBox);
+            var browseVideoBtn = new Button { Text = "Pick Video...", Location = new Point(454, sy - 2), Width = 90 };
+            browseVideoBtn.Click += BrowseVideoBtn_Click;
+            stepGroup.Controls.Add(browseVideoBtn);
+            sy += 34;
+
+            stepGroup.Controls.Add(MkLabel("Pre Ops", 12, sy));
+            _preOpsList = new CheckedListBox { Location = new Point(124, sy), Size = new Size(220, 100) };
+            stepGroup.Controls.Add(_preOpsList);
+            stepGroup.Controls.Add(MkLabel("Post Ops", 354, sy));
+            _postOpsList = new CheckedListBox { Location = new Point(434, sy), Size = new Size(220, 100) };
+            stepGroup.Controls.Add(_postOpsList);
+            stepGroup.Height = Math.Max(sy + _postOpsList.Height + 12, 44 + _photoPreview.Height + 12);
 
             foreach (var label in AutoOpLabels)
             {
@@ -315,8 +365,9 @@ namespace Plugins
                 _postOpsList.Items.Add(label);
             }
 
+            scroll.Controls.Add(stepGroup);
+
             _stepTypeCombo.SelectedIndexChanged += (s, e) => EditorChanged(s, e);
-            _projectOverrideFields.HookChanged(ProjectMachineSettingsChanged);
             HookEditorChanges();
 
             return scroll;
@@ -457,9 +508,6 @@ namespace Plugins
 
         private void HookEditorChanges()
         {
-            _projectIdBox.TextChanged += EditorChanged;
-            _projectNameBox.TextChanged += EditorChanged;
-            _projectDescBox.TextChanged += EditorChanged;
             _stepLabelBox.TextChanged += EditorChanged;
             _stepFileBox.TextChanged += EditorChanged;
             _stepInstructionsBox.TextChanged += EditorChanged;
@@ -468,12 +516,12 @@ namespace Plugins
             _preOpsList.ItemCheck += (s, e) =>
             {
                 if (_loadingEditor) return;
-                BeginInvoke(new MethodInvoker(() => { if (!_loadingEditor) ApplyEditorToStep(); }));
+                BeginInvoke(new MethodInvoker(() => { if (!_loadingEditor) { ApplyEditorToStep(); MarkDirty(); } }));
             };
             _postOpsList.ItemCheck += (s, e) =>
             {
                 if (_loadingEditor) return;
-                BeginInvoke(new MethodInvoker(() => { if (!_loadingEditor) ApplyEditorToStep(); }));
+                BeginInvoke(new MethodInvoker(() => { if (!_loadingEditor) { ApplyEditorToStep(); MarkDirty(); } }));
             };
         }
 
@@ -484,12 +532,14 @@ namespace Plugins
                 SeedProjectOverrideFromGlobal();
             SaveProjectMachineSettings();
             UpdateMachineSettingsVisibility();
+            MarkDirty();
         }
 
         private void ProjectMachineSettingsChanged(object sender, EventArgs e)
         {
             if (_loadingEditor) return;
             SaveProjectMachineSettings();
+            MarkDirty();
         }
 
         private void SeedProjectOverrideFromGlobal()
@@ -578,6 +628,7 @@ namespace Plugins
             RefreshProjectList();
             RefreshToolList();
             LoadSettingsFields();
+            SetSaved();
         }
 
         private void RefreshProjectList()
@@ -608,6 +659,7 @@ namespace Plugins
             {
                 _selectedProject = null;
                 _selectedStepIndex = -1;
+                ClearProjectFields();
                 ClearStepFields();
             }
         }
@@ -684,7 +736,7 @@ namespace Plugins
 
         private void CommitEditorToModel()
         {
-            if (_selectedStepIndex < 0 || _selectedProject == null) return;
+            if (_selectedProject == null) return;
             ApplyEditorToStep();
         }
 
@@ -697,12 +749,41 @@ namespace Plugins
                 _projectIdBox.Text = _selectedProject.id ?? "";
                 _projectNameBox.Text = _selectedProject.name ?? "";
                 _projectDescBox.Text = _selectedProject.description ?? "";
+                _projectImageBox.Text = _selectedProject.image ?? "";
+                LoadImagePreview(_projectImagePreview, _selectedProject.image);
             }
             finally
             {
                 _loadingEditor = false;
             }
             LoadProjectMachineFields();
+        }
+
+        private void ClearProjectFields()
+        {
+            _loadingEditor = true;
+            try
+            {
+                _projectIdBox.Text = "";
+                _projectNameBox.Text = "";
+                _projectDescBox.Text = "";
+                _projectImageBox.Text = "";
+                if (_projectImagePreview != null)
+                {
+                    if (_projectImagePreview.Image != null)
+                    {
+                        var old = _projectImagePreview.Image;
+                        _projectImagePreview.Image = null;
+                        old.Dispose();
+                    }
+                }
+                _overrideMachineBox.Checked = false;
+                UpdateMachineSettingsVisibility();
+            }
+            finally
+            {
+                _loadingEditor = false;
+            }
         }
 
         private void ApplyStepFields()
@@ -754,7 +835,6 @@ namespace Plugins
                 _photoBox.Text = "";
                 _videoBox.Text = "";
                 _photoPreview.Image = null;
-                _stepToolPreview.Image = null;
                 ClearCheckedOps(_preOpsList);
                 ClearCheckedOps(_postOpsList);
             }
@@ -790,12 +870,14 @@ namespace Plugins
         {
             if (_loadingEditor) return;
             ApplyEditorToStep();
+            MarkDirty();
         }
 
         private void SettingsChanged(object sender, EventArgs e)
         {
             if (_loadingEditor) return;
             if (_workingDoc == null) return;
+            MarkDirty();
             if (_workingDoc.settings == null) _workingDoc.settings = new MaestroSettings();
             var s = _workingDoc.settings;
             if (s.probe == null) s.probe = new ProbeSettings();
@@ -817,6 +899,7 @@ namespace Plugins
                 _selectedProject.id = _projectIdBox.Text.Trim();
                 _selectedProject.name = _projectNameBox.Text.Trim();
                 _selectedProject.description = _projectDescBox.Text.Trim();
+                _selectedProject.image = _projectImageBox.Text.Trim();
             }
 
             if (_selectedProject == null || _selectedStepIndex < 0 || _selectedStepIndex >= _selectedProject.steps.Count)
@@ -882,6 +965,7 @@ namespace Plugins
             _workingDoc.projects.Add(p);
             RefreshProjectList();
             _projectList.SelectedItem = p;
+            MarkDirty();
         }
 
         private void DupProjectBtn_Click(object sender, EventArgs e)
@@ -895,6 +979,7 @@ namespace Plugins
             _workingDoc.projects.Add(clone);
             RefreshProjectList();
             _projectList.SelectedItem = clone;
+            MarkDirty();
         }
 
         private void DelProjectBtn_Click(object sender, EventArgs e)
@@ -906,6 +991,7 @@ namespace Plugins
             _workingDoc.projects.Remove(_selectedProject);
             _selectedProject = null;
             RefreshProjectList();
+            MarkDirty();
         }
 
         private void AddStepBtn_Click(object sender, EventArgs e)
@@ -915,6 +1001,7 @@ namespace Plugins
             _selectedProject.steps.Add(new WorkflowStep());
             _selectedStepIndex = _selectedProject.steps.Count - 1;
             RefreshStepList();
+            MarkDirty();
         }
 
         private void DelStepBtn_Click(object sender, EventArgs e)
@@ -925,6 +1012,7 @@ namespace Plugins
             if (_selectedStepIndex >= _selectedProject.steps.Count)
                 _selectedStepIndex = _selectedProject.steps.Count - 1;
             RefreshStepList();
+            MarkDirty();
         }
 
         private void MoveStep(int delta)
@@ -938,6 +1026,7 @@ namespace Plugins
             _selectedProject.steps.Insert(newIndex, item);
             _selectedStepIndex = newIndex;
             RefreshStepList();
+            MarkDirty();
         }
 
         private class ToolComboEntry
@@ -982,7 +1071,6 @@ namespace Plugins
                     }
                 }
                 _stepToolCombo.SelectedIndex = _stepToolCombo.Items.Count > 0 ? idx : -1;
-                UpdateStepToolPreview(selectedToolId);
             }
             finally { _loadingEditor = false; }
         }
@@ -993,19 +1081,11 @@ namespace Plugins
             return entry != null ? entry.ToolId : 0;
         }
 
-        private void UpdateStepToolPreview(int toolId)
-        {
-            if (_stepToolPreview.Image != null) { var old = _stepToolPreview.Image; _stepToolPreview.Image = null; old.Dispose(); }
-            var tool = JsonStore.FindTool(_workingTools, toolId);
-            if (tool == null || string.IsNullOrEmpty(tool.image)) return;
-            LoadImagePreview(_stepToolPreview, tool.image);
-        }
-
         private void StepToolCombo_SelectedIndexChanged(object sender, EventArgs e)
         {
             if (_loadingEditor) return;
-            UpdateStepToolPreview(GetSelectedStepToolId());
             ApplyEditorToStep();
+            MarkDirty();
         }
 
         private void NewToolFromStepBtn_Click(object sender, EventArgs e)
@@ -1021,6 +1101,7 @@ namespace Plugins
                 RefreshToolList();
                 RefreshStepToolCombo(dlg.Result.id);
                 ApplyEditorToStep();
+                MarkDirty();
             }
         }
 
@@ -1143,6 +1224,7 @@ namespace Plugins
                 finally { _loadingEditor = false; }
             }
             RefreshStepToolComboPreserving();
+            MarkDirty();
         }
 
         private void PickLibraryToolImage()
@@ -1156,6 +1238,7 @@ namespace Plugins
             CopyToolImageFile(_libToolImageBox);
             _selectedLibraryTool.image = _libToolImageBox.Text.Trim();
             LoadImagePreview(_libToolImagePreview, _libToolImageBox.Text);
+            MarkDirty();
         }
 
         private void CopyToolImageFile(TextBox targetBox)
@@ -1191,6 +1274,7 @@ namespace Plugins
             _workingTools.tools.Add(tool);
             RefreshToolList();
             _toolList.SelectedItem = tool;
+            MarkDirty();
         }
 
         private void DupToolBtn_Click(object sender, EventArgs e)
@@ -1208,6 +1292,7 @@ namespace Plugins
             _workingTools.tools.Add(copy);
             RefreshToolList();
             _toolList.SelectedItem = copy;
+            MarkDirty();
         }
 
         private void DelToolBtn_Click(object sender, EventArgs e)
@@ -1230,6 +1315,7 @@ namespace Plugins
             _workingTools.tools.Remove(tool);
             _selectedLibraryTool = null;
             RefreshToolList();
+            MarkDirty();
         }
 
         private void BrowseGcodeBtn_Click(object sender, EventArgs e)
@@ -1266,6 +1352,7 @@ namespace Plugins
             }
             CopyMediaFile(backing, new[] { "jpg", "jpeg", "png", "bmp", "gif" });
             LoadImagePreview(preview, backing.Text);
+            MarkDirty();
         }
 
         private PictureBox MakeImagePicker(Point location, string emptyText, Action onPick)
@@ -1339,15 +1426,8 @@ namespace Plugins
             if (string.IsNullOrEmpty(relativePath)) return;
             string mediaRoot = _mediaRootBox.Text.Trim();
             if (string.IsNullOrEmpty(mediaRoot)) mediaRoot = MaestroPaths.MaestroRoot + "\\Media";
-            string path = Path.Combine(mediaRoot, relativePath);
-            if (!File.Exists(path)) return;
-            try
-            {
-                using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read))
-                using (var tmp = Image.FromStream(fs))
-                    target.Image = new Bitmap(tmp);
-            }
-            catch { }
+            string path = Path.IsPathRooted(relativePath) ? relativePath : Path.Combine(mediaRoot, relativePath);
+            target.Image = ImageUtil.LoadOriented(path);
         }
 
         private void SaveBtn_Click(object sender, EventArgs e)
@@ -1360,7 +1440,29 @@ namespace Plugins
             JsonStore.SaveTools(MaestroPaths.ToolsFile, _workingTools);
             _engine.ReloadDocument();
             _saveStatusLabel.Text = "Saved " + DateTime.Now.ToString("HH:mm:ss");
+            SetSaved();
             if (DocumentSaved != null) DocumentSaved();
+        }
+
+        private void MarkDirty()
+        {
+            if (_loadingEditor) return;
+            _dirty = true;
+            UpdateSaveButtonState();
+        }
+
+        private void SetSaved()
+        {
+            _dirty = false;
+            UpdateSaveButtonState();
+        }
+
+        private void UpdateSaveButtonState()
+        {
+            if (_saveBtn == null) return;
+            _saveBtn.Enabled = _dirty;
+            _saveBtn.BackColor = _dirty ? Color.FromArgb(0, 122, 204) : Color.FromArgb(200, 200, 200);
+            _saveBtn.ForeColor = _dirty ? Color.White : Color.FromArgb(120, 120, 120);
         }
 
         private static void SafeSetSplitter(SplitContainer split, int desired, int panel1Min, int panel2Min)

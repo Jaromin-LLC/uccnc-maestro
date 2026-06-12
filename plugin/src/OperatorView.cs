@@ -19,6 +19,7 @@ namespace Plugins
         private readonly Button _runAllButton;
         private readonly Button _resetButton;
         private readonly Button _abortButton;
+        private readonly PictureBox _projectPhoto;
         private readonly Label _statusLabel;
 
         private readonly Panel _overlay;
@@ -117,6 +118,18 @@ namespace Plugins
             buttonPanel.Controls.Add(_runAllButton);
             buttonPanel.Controls.Add(_resetButton);
             buttonPanel.Controls.Add(_abortButton);
+
+            _projectPhoto = new PictureBox
+            {
+                Width = 172,
+                Height = 150,
+                SizeMode = PictureBoxSizeMode.Zoom,
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor = Color.White,
+                Visible = false,
+                Margin = new Padding(0, 8, 0, 0)
+            };
+            buttonPanel.Controls.Add(_projectPhoto);
 
             _stepGrid = new DataGridView
             {
@@ -370,7 +383,35 @@ namespace Plugins
                 ? _currentProject.name
                 : _currentProject.description;
 
+            LoadProjectPhoto();
             RefreshStepGrid();
+        }
+
+        private void LoadProjectPhoto()
+        {
+            if (_projectPhoto.Image != null)
+            {
+                var old = _projectPhoto.Image;
+                _projectPhoto.Image = null;
+                old.Dispose();
+            }
+
+            if (_currentProject == null || string.IsNullOrEmpty(_currentProject.image))
+            {
+                _projectPhoto.Visible = false;
+                return;
+            }
+
+            string path = ResolveMediaPath(_currentProject.image);
+            var img = ImageUtil.LoadOriented(path);
+            if (img == null)
+            {
+                _projectPhoto.Visible = false;
+                return;
+            }
+
+            _projectPhoto.Image = img;
+            _projectPhoto.Visible = true;
         }
 
         private void RefreshStepGrid()
@@ -679,18 +720,13 @@ namespace Plugins
             if (string.IsNullOrEmpty(relativePath)) return false;
 
             string path = ResolveMediaPath(relativePath);
-            if (!File.Exists(path)) return false;
-            try
-            {
-                if (_overlayPhoto.Image != null) { var old = _overlayPhoto.Image; _overlayPhoto.Image = null; old.Dispose(); }
-                using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read))
-                using (var tmp = Image.FromStream(fs))
-                    _overlayPhoto.Image = new Bitmap(tmp);
-                _overlayPhoto.Visible = true;
-                _overlayGraphic.Visible = false;
-                return true;
-            }
-            catch { return false; }
+            if (_overlayPhoto.Image != null) { var old = _overlayPhoto.Image; _overlayPhoto.Image = null; old.Dispose(); }
+            var img = ImageUtil.LoadOriented(path);
+            if (img == null) return false;
+            _overlayPhoto.Image = img;
+            _overlayPhoto.Visible = true;
+            _overlayGraphic.Visible = false;
+            return true;
         }
 
         private static string BuildToolText(WorkflowStep step, int stepIndex, ToolInfo tool)

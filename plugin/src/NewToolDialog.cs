@@ -101,15 +101,8 @@ namespace Plugins
             if (_imagePreview.Image != null) { var old = _imagePreview.Image; _imagePreview.Image = null; old.Dispose(); }
             if (string.IsNullOrEmpty(_imageBox.Text)) return;
             if (string.IsNullOrEmpty(mediaRoot)) mediaRoot = MaestroPaths.MaestroRoot + "\\Media";
-            string path = Path.Combine(mediaRoot, _imageBox.Text);
-            if (!File.Exists(path)) return;
-            try
-            {
-                using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read))
-                using (var tmp = Image.FromStream(fs))
-                    _imagePreview.Image = new Bitmap(tmp);
-            }
-            catch { }
+            string path = Path.IsPathRooted(_imageBox.Text) ? _imageBox.Text : Path.Combine(mediaRoot, _imageBox.Text);
+            _imagePreview.Image = ImageUtil.LoadOriented(path);
         }
 
         private void OkBtn_Click(object sender, EventArgs e)
