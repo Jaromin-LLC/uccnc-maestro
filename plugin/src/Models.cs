@@ -264,7 +264,6 @@ namespace Plugins
         public static void EnsureDirectories()
         {
             Directory.CreateDirectory(MaestroRoot);
-            Directory.CreateDirectory(Path.Combine(MaestroRoot, "GCode"));
             Directory.CreateDirectory(Path.Combine(MaestroRoot, "Media"));
             Directory.CreateDirectory(Path.Combine(MaestroRoot, "Media", "Tools"));
         }

@@ -1,10 +1,10 @@
 # Deployment
 
 ```powershell
-cd plugin
-.\build-plugin.ps1
-.\install-plugin.ps1 -ProfileName Default   # or your production profile
+.\make.ps1 install     # builds, deploys the DLL, seeds configs on first install
 ```
+
+Existing `projects.json` / `tools.json` in `C:\UCCNC\Maestro` are never overwritten by `make.ps1 install`. To hand off to a shop PC instead, run `.\make.ps1 package` and use the graphical installer in the resulting zip.
 
 1. **Close UCCNC** before running install
 2. After install: **Configuration → Plugins** → enable **JarominMaestro**, check **Call startup**

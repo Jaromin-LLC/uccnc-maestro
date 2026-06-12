@@ -314,7 +314,7 @@ namespace Plugins
             stepGroup.Controls.Add(MkLabel("G-code File", 12, sy));
             _stepFileBox = MkText(124, sy, 320);
             stepGroup.Controls.Add(_stepFileBox);
-            _toolTips.SetToolTip(_stepFileBox, "Full path to the G-code file run for this step (e.g. C:\\UCCNC\\Maestro\\GCode\\ProjectA\\op1.nc).");
+            _toolTips.SetToolTip(_stepFileBox, "Full path to the G-code file run for this step. The file can live anywhere (e.g. your CAM output folder).");
             var browseGcodeBtn = new Button { Text = "Browse...", Location = new Point(454, sy - 2), Width = 80 };
             browseGcodeBtn.Click += BrowseGcodeBtn_Click;
             stepGroup.Controls.Add(browseGcodeBtn); sy += 28;

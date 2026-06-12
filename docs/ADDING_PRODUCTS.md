@@ -126,20 +126,8 @@ Default for `op` steps: pre = moveToolChange, toolPrompt, autoZero; post = spind
 
 
 
-Edit [plugin/config/projects.json](../plugin/config/projects.json) and [plugin/config/tools.json](../plugin/config/tools.json) for version-controlled defaults, then reinstall:
+[plugin/config/projects.json](../plugin/config/projects.json) and [plugin/config/tools.json](../plugin/config/tools.json) are version-controlled defaults used to seed `C:\UCCNC\Maestro` on a **first install only** — installers never overwrite existing `projects.json` / `tools.json` on the machine.
 
-
-
-```powershell
-
-cd plugin
-
-.\install-plugin.ps1 -ProfileName Default
-
-```
-
-
-
-Or edit live in Admin and **Save All** — no reinstall needed for workflow changes.
+To change workflows on a machine that is already installed, edit live in Admin and **Save All** (no reinstall needed), or copy the files into `C:\UCCNC\Maestro` manually.
 
 
