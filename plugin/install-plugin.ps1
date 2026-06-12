@@ -1,21 +1,12 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Deploy Jaromin Maestro UCCNC plugin and retire the legacy screenset.
-
-.PARAMETER ProfileName
-  UCCNC profile name without extension (Default, etc.). Used only to locate the
-  profile's macro folder for legacy cleanup; the active screenset is left as-is.
-
-.PARAMETER ProfileMacroFolder
-  Macro folder for the active profile. Defaults from ProfileName.
+  Build and deploy the Jaromin Maestro UCCNC plugin (developer loop).
 
 .PARAMETER SkipBuild
   Skip running build-plugin.ps1 before deploy.
 #>
 param(
-    [string]$ProfileName = "Default",
-    [string]$ProfileMacroFolder = "",
     [switch]$SkipBuild
 )
 
@@ -29,17 +20,9 @@ $MaestroRoot = Join-Path $UccncRoot "Maestro"
 $PluginsDir = Join-Path $UccncRoot "Plugins"
 $GcodeDest = Join-Path $MaestroRoot "GCode"
 $MediaDest = Join-Path $MaestroRoot "Media"
-$ScreensDir = Join-Path $UccncRoot "Screens"
-$BmpDir = Join-Path $UccncRoot "Flashscreen\BMP\Jaromin"
 $DllName = "JarominMaestro.dll"
 
-if (-not $ProfileMacroFolder) {
-    $ProfileMacroFolder = Join-Path $UccncRoot "Profiles\Macro_$ProfileName"
-}
-
 Write-Host "Jaromin Maestro plugin installer" -ForegroundColor Cyan
-Write-Host "  Profile: $ProfileName"
-Write-Host "  Macros:  $ProfileMacroFolder"
 Write-Host ""
 
 if (-not (Test-Path $UccncRoot)) {
@@ -72,36 +55,6 @@ Write-Host "[OK] Tool library -> $MaestroRoot\tools.json"
 
 New-Item -ItemType Directory -Force -Path $GcodeDest | Out-Null
 Write-Host "[OK] G-code folder ready -> $GcodeDest (copy your .nc files here)"
-
-# Retire legacy screenset artifacts
-$jarominSsf = Join-Path $ScreensDir "Jaromin.ssf"
-if (Test-Path $jarominSsf) {
-    Remove-Item -Force $jarominSsf
-    Write-Host "[OK] Removed screenset $jarominSsf"
-}
-if (Test-Path $BmpDir) {
-    Remove-Item -Recurse -Force $BmpDir
-    Write-Host "[OK] Removed tab images $BmpDir"
-}
-
-$macroMin = 20797
-$macroMax = 20886
-$macroFolders = @(
-    $ProfileMacroFolder,
-    (Join-Path $UccncRoot "Profiles\Macro"),
-    (Join-Path $UccncRoot "Macro")
-) | Select-Object -Unique
-
-foreach ($folder in $macroFolders) {
-    if (-not (Test-Path $folder)) { continue }
-    for ($n = $macroMin; $n -le $macroMax; $n++) {
-        $macroFile = Join-Path $folder ("M{0}.txt" -f $n)
-        if (Test-Path $macroFile) {
-            Remove-Item -Force $macroFile
-            Write-Host "[OK] Removed macro $macroFile"
-        }
-    }
-}
 
 Write-Host ""
 Write-Host "Deployment checklist:" -ForegroundColor Green

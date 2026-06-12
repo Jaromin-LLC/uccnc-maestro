@@ -519,15 +519,21 @@ namespace Plugins
         {
             bool useScreenset = _useMachineTcBox.Checked;
             bool hasProject = _selectedProject != null;
-            _globalMachineGroup.Visible = !useScreenset;
-            _globalMachineFields.SetEnabled(!useScreenset);
 
-            _projectOverrideGroup.Visible = !useScreenset && hasProject;
+            // Global settings stay visible and keep their values; they are greyed out
+            // when the UCCNC screenset fields are used instead.
+            _globalMachineGroup.Visible = true;
+            _globalMachineGroup.Enabled = !useScreenset;
+
+            // Project overrides stay visible whenever a project is selected, and are
+            // greyed out (values retained) when the screenset fields are used.
+            _projectOverrideGroup.Visible = hasProject;
+            _projectOverrideGroup.Enabled = !useScreenset;
             _overrideMachineBox.Enabled = !useScreenset && hasProject;
 
-            bool showOverride = !useScreenset && hasProject && _overrideMachineBox.Checked;
+            bool showOverride = hasProject && _overrideMachineBox.Checked;
             _projectOverridePanel.Visible = showOverride;
-            _projectOverrideFields.SetEnabled(showOverride);
+            _projectOverrideFields.SetEnabled(showOverride && !useScreenset);
         }
 
         private void SaveProjectMachineSettings()

@@ -66,11 +66,11 @@ For an unattended install (no prompt): `Install.bat -UccncRoot "C:\UCCNC" -Yes`.
 
 ### B. Developer deploy (from the repo)
 
-`install-plugin.ps1` is the development loop: it compiles, deploys, copies G-code from a local source, and retires legacy screenset artifacts.
+`install-plugin.ps1` is the development loop: it compiles the DLL, deploys it to `C:\UCCNC\Plugins`, and seeds the `Maestro` config folder.
 
 ```powershell
 cd plugin
-.\install-plugin.ps1 -ProfileName Default
+.\install-plugin.ps1
 ```
 
 Then enable the plugin in UCCNC as in step 4–5 above.
@@ -95,7 +95,7 @@ installer\Install.ps1 / .bat  ----------+         (+ Install.ps1, Install.bat, R
 | `plugin/src/` | Plugin source (WinForms UI + workflow engine) |
 | `plugin/config/projects.json` | Seed workflow config (v3 schema) |
 | `plugin/build-plugin.ps1` | Compile the DLL with .NET 4.x `csc` |
-| `plugin/install-plugin.ps1` | Developer deploy (build + copy + retire legacy) |
+| `plugin/install-plugin.ps1` | Developer deploy (build + copy to UCCNC) |
 | `installer/Install.ps1` | Standalone target-machine installer (no build) |
 | `installer/Install.bat` | Double-click launcher for `Install.ps1` |
 | `installer/package-release.ps1` | Build + bundle the distributable zip |
