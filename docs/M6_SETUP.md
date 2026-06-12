@@ -8,7 +8,7 @@ routine is built into the plugin (a `G31` probe against your fixed tool setter);
 ## Per-operation flow (built into every RUN / RUN ALL step)
 
 1. Spindle stops, machine moves to the **tool change position** (safe Z first)
-2. Operator is prompted with the exact bit (diameter, type, description, RPM)
+2. Operator is prompted with the exact bit (diameter, type, description)
    and confirms it is installed and tight
 3. Machine **automatically** moves to the tool setter and runs the two-pass
    probe (auto zero) — work Z is re-zeroed for the new tool
@@ -18,10 +18,14 @@ routine is built into the plugin (a `G31` probe against your fixed tool setter);
 
 Every tool change gets a fresh touch-off.
 
-## One-time setup (Admin tab → Probing / Tool Change)
+## One-time setup (Admin tab → machine settings)
 
-Open the **Admin** tab in the Maestro window, fill in the **Probing / Tool
-Change** settings (machine coordinates), then **Save All**:
+Open the **Admin** tab in the Maestro window. Below the project/step editor you
+will find **Global machine settings** (defaults for all projects) and, when a
+project is selected, an optional **Project-specific overrides** section.
+
+Fill in the global values (machine coordinates), then **Save All**. Hover any
+field for a short description of what it does.
 
 | Setting | Purpose |
 |---------|---------|
@@ -30,14 +34,21 @@ Change** settings (machine coordinates), then **Save All**:
 | Retract dist | Retract after the fast pass |
 | Fast feed / Slow feed | First (fast) and second (slow) pass feedrates |
 | Plate rapid Z | Optional rapid-down height before probing |
-| Plate Z zero | Work-Z value of the plate surface |
+| Plate offset from Z zero | Height of the plate top above work Z0; equals puck thickness when the puck sits on the Z0 surface |
 | Tool change X / Y / Z | Where the machine parks for tool swaps |
 | Safe Z | Retract height for rapids |
 | Retract to Safe Z before TC / probe moves | Use Safe Z for tool-change moves |
 | Rapid to Plate rapid Z before probing | Enable the optional rapid-down |
 
-These values are stored in `C:\UCCNC\Maestro\projects.json` and travel with the
-plugin — they do **not** depend on any particular screenset.
+These values are stored in `C:\UCCNC\Maestro\projects.json` under `settings`
+and travel with the plugin — they do **not** depend on any particular screenset.
+
+### Per-project overrides (rare)
+
+Select a project, then tick **Override global machine settings for this project**
+to reveal a second copy of the same fields. Values are saved on that project
+only (`overrideMachineSettings`, `probe`, `toolChangePos`, `useSafeZForTc` in
+`projects.json`). When the box is unchecked, global defaults apply at runtime.
 
 Maestro pre-flight refuses to start if the plate location, probe distance or
 probe feed are unset (all zero), so a fresh config cannot probe at 0,0.

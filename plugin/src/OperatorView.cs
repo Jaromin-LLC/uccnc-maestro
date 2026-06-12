@@ -14,8 +14,7 @@ namespace Plugins
 
         private readonly ComboBox _projectCombo;
         private readonly Label _projectDescription;
-        private readonly CheckBox _demoModeToggle;
-        private bool _suppressDemoEvent;
+        private readonly Label _demoBanner;
         private readonly DataGridView _stepGrid;
         private readonly Button _runAllButton;
         private readonly Button _resetButton;
@@ -72,30 +71,28 @@ namespace Plugins
                 AutoEllipsis = true
             };
 
-            _demoModeToggle = new CheckBox
+            _demoBanner = new Label
             {
-                Appearance = Appearance.Button,
-                Text = "DEMO MODE: OFF",
-                Size = new Size(240, 44),
+                Text = "DEMO MODE",
+                Size = new Size(200, 44),
                 Location = new Point(420, 10),
-                Font = new Font("Segoe UI", 12F, FontStyle.Bold),
+                Font = new Font("Segoe UI", 13F, FontStyle.Bold),
                 TextAlign = ContentAlignment.MiddleCenter,
-                FlatStyle = FlatStyle.Flat,
                 ForeColor = Color.White,
-                BackColor = Color.FromArgb(90, 90, 90)
+                BackColor = Color.FromArgb(214, 120, 0),
+                Visible = false
             };
-            _demoModeToggle.CheckedChanged += DemoModeToggle_CheckedChanged;
 
             topPanel.Controls.Add(_projectCombo);
             topPanel.Controls.Add(_projectDescription);
-            topPanel.Controls.Add(_demoModeToggle);
+            topPanel.Controls.Add(_demoBanner);
 
             topPanel.Resize += (s, e) =>
             {
-                int desired = topPanel.ClientSize.Width - _demoModeToggle.Width - 14;
+                int desired = topPanel.ClientSize.Width - _demoBanner.Width - 14;
                 int minLeft = _projectCombo.Right + 20;
-                _demoModeToggle.Left = Math.Max(minLeft, desired);
-                _demoModeToggle.Top = 10;
+                _demoBanner.Left = Math.Max(minLeft, desired);
+                _demoBanner.Top = 10;
             };
 
             var buttonPanel = new FlowLayoutPanel
@@ -332,22 +329,9 @@ namespace Plugins
             };
         }
 
-        private void DemoModeToggle_CheckedChanged(object sender, EventArgs e)
-        {
-            bool on = _demoModeToggle.Checked;
-            _demoModeToggle.Text = "DEMO MODE: " + (on ? "ON" : "OFF");
-            _demoModeToggle.BackColor = on ? Color.FromArgb(214, 120, 0) : Color.FromArgb(90, 90, 90);
-            if (!_suppressDemoEvent)
-                _engine.SetTestMode(on);
-        }
-
         private void SyncDemoToggle()
         {
-            _suppressDemoEvent = true;
-            _demoModeToggle.Checked = _engine.TestMode;
-            _demoModeToggle.Text = "DEMO MODE: " + (_engine.TestMode ? "ON" : "OFF");
-            _demoModeToggle.BackColor = _engine.TestMode ? Color.FromArgb(214, 120, 0) : Color.FromArgb(90, 90, 90);
-            _suppressDemoEvent = false;
+            _demoBanner.Visible = _engine.TestMode;
         }
 
         public void ReloadProjects()
@@ -403,8 +387,9 @@ namespace Plugins
                     : StepRunStatus.Pending;
                 _stepStatuses[i] = status;
 
-                string toolText = step.IsGate ? "-" : (step.tool != null ? step.tool.type : "");
-                string dia = step.IsGate ? "-" : (step.tool != null ? step.tool.diameter : "");
+                var tool = step.IsGate ? null : _engine.GetToolForStep(step);
+                string toolText = tool != null ? tool.type : (step.IsGate ? "-" : "");
+                string dia = tool != null ? tool.diameter : (step.IsGate ? "-" : "");
                 int lastRun = RunStateStore.GetLastRunSeconds(_engine.State, _currentProject.id, i);
 
                 _stepGrid.Rows.Add(StatusText(GetRowVisualState(i)), (i + 1).ToString(), step.label, toolText, dia, FormatRuntime(lastRun));
@@ -650,7 +635,6 @@ namespace Plugins
             _runAllButton.Enabled = !running;
             _resetButton.Enabled = !running;
             _abortButton.Enabled = running;
-            _demoModeToggle.Enabled = !running;
             UpdateRunButtonStates();
         }
 
@@ -671,13 +655,13 @@ namespace Plugins
             }
             else
             {
-                var tool = step.tool ?? new ToolInfo();
+                var tool = _engine.GetToolForStep(step) ?? new ToolInfo();
                 bool hasImage = LoadOverlayImage(tool.image) || LoadOverlayImage(step.photo);
                 _overlayBanner.Text = "CHANGE TOOL  ->  T" + tool.num;
                 _overlayBanner.BackColor = Color.FromArgb(214, 120, 0);
                 _confirmButton.Text = "TOOL INSTALLED";
                 if (!hasImage) SetGraphicGlyph("\U0001F527");
-                _overlayInstructions.Text = BuildToolText(step, stepIndex);
+                _overlayInstructions.Text = BuildToolText(step, stepIndex, tool);
             }
 
             ShowOverlay();
@@ -709,14 +693,13 @@ namespace Plugins
             catch { return false; }
         }
 
-        private static string BuildToolText(WorkflowStep step, int stepIndex)
+        private static string BuildToolText(WorkflowStep step, int stepIndex, ToolInfo tool)
         {
-            var tool = step.tool ?? new ToolInfo();
+            if (tool == null) tool = new ToolInfo();
             return step.label + "\n\n" +
                    "Install Tool #" + tool.num + "\n" +
                    tool.diameter + "  " + tool.type + "\n" +
-                   (string.IsNullOrEmpty(tool.desc) ? "" : tool.desc + "\n") +
-                   "Spindle RPM " + tool.rpm + "\n\n" +
+                   (string.IsNullOrEmpty(tool.desc) ? "" : tool.desc + "\n") + "\n" +
                    (string.IsNullOrEmpty(step.DisplayInstructions) ? "" : step.DisplayInstructions + "\n\n") +
                    "Tighten the collet, then press CONFIRM.";
         }

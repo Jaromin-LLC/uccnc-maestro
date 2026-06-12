@@ -54,8 +54,10 @@ if (-not $SkipBuild) {
 
 $dllPath = Join-Path $BuildRoot $DllName
 $configPath = Join-Path $ConfigRoot "projects.json"
+$toolsConfigPath = Join-Path $ConfigRoot "tools.json"
 if (-not (Test-Path $dllPath)) { throw "Build output missing: $dllPath" }
 if (-not (Test-Path $configPath)) { throw "Config missing: $configPath" }
+if (-not (Test-Path $toolsConfigPath)) { throw "Config missing: $toolsConfigPath" }
 
 New-Item -ItemType Directory -Force -Path $PluginsDir | Out-Null
 Copy-Item -Force $dllPath (Join-Path $PluginsDir $DllName)
@@ -65,6 +67,8 @@ New-Item -ItemType Directory -Force -Path $MaestroRoot | Out-Null
 New-Item -ItemType Directory -Force -Path $MediaDest | Out-Null
 Copy-Item -Force $configPath (Join-Path $MaestroRoot "projects.json")
 Write-Host "[OK] Config -> $MaestroRoot\projects.json"
+Copy-Item -Force $toolsConfigPath (Join-Path $MaestroRoot "tools.json")
+Write-Host "[OK] Tool library -> $MaestroRoot\tools.json"
 
 New-Item -ItemType Directory -Force -Path $GcodeDest | Out-Null
 Write-Host "[OK] G-code folder ready -> $GcodeDest (copy your .nc files here)"
@@ -109,4 +113,4 @@ Write-Host "  5. Operator tab: select project, RUN a step or Run All"
 Write-Host "  6. Admin tab: edit workflows, photos/videos, machine settings; Save All"
 Write-Host "  7. Enable Test mode in Admin for demo (skips probing) - never use when cutting"
 Write-Host ""
-Write-Host "Config lives at $MaestroRoot\projects.json (editable in Admin tab)."
+Write-Host "Config lives at $MaestroRoot\projects.json and $MaestroRoot\tools.json (editable in Admin tab)."

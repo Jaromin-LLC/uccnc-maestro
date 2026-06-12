@@ -24,6 +24,7 @@ namespace Plugins
         private ManualResetEvent _confirmEvent = new ManualResetEvent(false);
 
         private ProjectsDocument _document;
+        private ToolLibraryDocument _toolLibrary;
         private ProjectRunState _state;
         private WorkflowProject _activeProject;
         private int _activeStepIndex = -1;
@@ -55,6 +56,17 @@ namespace Plugins
             get { return _document; }
         }
 
+        public ToolLibraryDocument ToolLibrary
+        {
+            get { return _toolLibrary; }
+        }
+
+        public ToolInfo GetToolForStep(WorkflowStep step)
+        {
+            if (step == null || step.toolId <= 0) return null;
+            return JsonStore.FindTool(_toolLibrary, step.toolId);
+        }
+
         public ProjectRunState State
         {
             get { return _state; }
@@ -64,12 +76,14 @@ namespace Plugins
         {
             MaestroPaths.EnsureDirectories();
             _document = JsonStore.LoadProjects(MaestroPaths.ProjectsFile);
+            _toolLibrary = JsonStore.LoadTools(MaestroPaths.ToolsFile);
             _state = JsonStore.LoadState(MaestroPaths.StateFile);
         }
 
         public void ReloadDocument()
         {
             _document = JsonStore.LoadProjects(MaestroPaths.ProjectsFile);
+            _toolLibrary = JsonStore.LoadTools(MaestroPaths.ToolsFile);
         }
 
         public bool TestMode
@@ -155,7 +169,7 @@ namespace Plugins
 
             try
             {
-                var ops = new MachineOps(_host.UC, _document.settings, _owner, InvokeUi);
+                var ops = new MachineOps(_host.UC, _document.settings, project, _owner, InvokeUi);
 
                 if (!ops.Preflight(SetStatus))
                 {
@@ -249,8 +263,9 @@ namespace Plugins
                 if (opId == AutoOpIds.ToolPrompt)
                 {
                     if (!WaitForOperatorConfirm(step, stepIndex, false)) return false;
-                    if (step.tool != null)
-                        ops.SetCurrentTool(step.tool.num, SetStatus);
+                    var tool = GetToolForStep(step);
+                    if (tool != null)
+                        ops.SetCurrentTool(tool.num, SetStatus);
                     continue;
                 }
 
@@ -258,8 +273,7 @@ namespace Plugins
                     return false;
             }
 
-            string relFile = step.file ?? "";
-            string fullPath = Path.Combine(_document.settings.gcodeRoot, relFile);
+            string fullPath = (step.file ?? "").Trim();
 
             _cycleFinishedEvent.Reset();
             if (!ops.LoadAndRunFile(fullPath, SetStatus, () => _abortRequested, WaitForCycleFinish,

@@ -1,6 +1,5 @@
 {
   "settings": {
-    "gcodeRoot": "C:\\UCCNC\\Maestro\\GCode",
     "mediaRoot": "C:\\UCCNC\\Maestro\\Media",
     "testMode": false,
     "useMachineTcFields": false,
@@ -29,9 +28,9 @@
         {
           "type": "op",
           "label": "Example Operation",
-          "file": "Sample/example.nc",
-          "tool": { "num": 1, "type": "Flat endmill", "diameter": "0.25\"", "desc": "Example bit", "rpm": 18000 },
-          "minutes": 10,
+          "file": "C:\\UCCNC\\Maestro\\GCode\\Sample\\example.nc",
+          "toolId": 1,
+          "minutes": 0,
           "instructions": "Mount stock and verify work holding before running.",
           "photo": "",
           "video": "",
@@ -42,7 +41,7 @@
           "type": "gate",
           "label": "Inspect / Flip",
           "file": "",
-          "tool": { "num": 1, "type": "", "diameter": "", "desc": "", "rpm": 0 },
+          "toolId": 0,
           "minutes": 0,
           "instructions": "STOP. Inspect the part or flip the stock, then confirm to continue.",
           "photo": "",

@@ -11,10 +11,10 @@ namespace Plugins
         private readonly Form _owner;
         private readonly Action<Action> _uiInvoke;
 
-        public MachineOps(Plugininterface.Entry uc, MaestroSettings settings, Form owner, Action<Action> uiInvoke)
+        public MachineOps(Plugininterface.Entry uc, MaestroSettings settings, WorkflowProject project, Form owner, Action<Action> uiInvoke)
         {
             _uc = uc;
-            _settings = settings ?? new MaestroSettings();
+            _settings = JsonStore.ResolveForProject(settings, project) ?? new MaestroSettings();
             _owner = owner;
             _uiInvoke = uiInvoke;
         }

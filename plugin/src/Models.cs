@@ -40,7 +40,6 @@ namespace Plugins
 
     public class MaestroSettings
     {
-        public string gcodeRoot { get; set; }
         public string mediaRoot { get; set; }
         public ToolChangePos toolChangePos { get; set; }
         public ProbeSettings probe { get; set; }
@@ -58,7 +57,6 @@ namespace Plugins
 
         public MaestroSettings()
         {
-            gcodeRoot = @"C:\UCCNC\Maestro\GCode";
             mediaRoot = @"C:\UCCNC\Maestro\Media";
             toolChangePos = new ToolChangePos();
             probe = new ProbeSettings();
@@ -69,21 +67,45 @@ namespace Plugins
 
     public class ToolInfo
     {
+        public int id { get; set; }
         public int num { get; set; }
         public string type { get; set; }
         public string diameter { get; set; }
         public string desc { get; set; }
-        public int rpm { get; set; }
         public string image { get; set; }
 
         public ToolInfo()
         {
+            id = 0;
             num = 1;
             type = "";
             diameter = "";
             desc = "";
-            rpm = 18000;
             image = "";
+        }
+
+        public string DisplayLabel()
+        {
+            string label = "T" + num;
+            if (!string.IsNullOrEmpty(diameter)) label += " — " + diameter;
+            if (!string.IsNullOrEmpty(type)) label += " " + type;
+            if (!string.IsNullOrEmpty(desc)) label += " (" + desc + ")";
+            return label.Trim();
+        }
+
+        public override string ToString()
+        {
+            return DisplayLabel();
+        }
+    }
+
+    public class ToolLibraryDocument
+    {
+        public List<ToolInfo> tools { get; set; }
+
+        public ToolLibraryDocument()
+        {
+            tools = new List<ToolInfo>();
         }
     }
 
@@ -92,7 +114,7 @@ namespace Plugins
         public string type { get; set; }
         public string label { get; set; }
         public string file { get; set; }
-        public ToolInfo tool { get; set; }
+        public int toolId { get; set; }
         public int minutes { get; set; }
         public string instructions { get; set; }
         public string notes { get; set; }
@@ -107,7 +129,7 @@ namespace Plugins
             type = "op";
             label = "New Step";
             file = "";
-            tool = new ToolInfo();
+            toolId = 0;
             instructions = "";
             notes = "";
             photo = "";
@@ -174,6 +196,12 @@ namespace Plugins
         public string image { get; set; }
         public List<WorkflowStep> steps { get; set; }
 
+        /// <summary>When true, probe / tool-change values on this project replace global defaults.</summary>
+        public bool overrideMachineSettings { get; set; }
+        public ToolChangePos toolChangePos { get; set; }
+        public ProbeSettings probe { get; set; }
+        public bool useSafeZForTc { get; set; }
+
         public WorkflowProject()
         {
             id = "NEW_PROJECT";
@@ -181,6 +209,9 @@ namespace Plugins
             description = "";
             image = "";
             steps = new List<WorkflowStep>();
+            toolChangePos = new ToolChangePos();
+            probe = new ProbeSettings();
+            useSafeZForTc = true;
         }
 
         public override string ToString()
@@ -227,6 +258,7 @@ namespace Plugins
     {
         public static string MaestroRoot = @"C:\UCCNC\Maestro";
         public static string ProjectsFile = Path.Combine(MaestroRoot, "projects.json");
+        public static string ToolsFile = Path.Combine(MaestroRoot, "tools.json");
         public static string StateFile = Path.Combine(MaestroRoot, "state.json");
 
         public static void EnsureDirectories()
@@ -234,6 +266,7 @@ namespace Plugins
             Directory.CreateDirectory(MaestroRoot);
             Directory.CreateDirectory(Path.Combine(MaestroRoot, "GCode"));
             Directory.CreateDirectory(Path.Combine(MaestroRoot, "Media"));
+            Directory.CreateDirectory(Path.Combine(MaestroRoot, "Media", "Tools"));
         }
     }
 
@@ -300,14 +333,126 @@ namespace Plugins
             foreach (var project in doc.projects)
             {
                 if (project.steps == null) project.steps = new List<WorkflowStep>();
+                if (project.toolChangePos == null) project.toolChangePos = new ToolChangePos();
+                if (project.probe == null) project.probe = new ProbeSettings();
                 foreach (var step in project.steps)
                 {
-                    if (step.tool == null) step.tool = new ToolInfo();
+                    if (step.toolId < 0) step.toolId = 0;
                     if (string.IsNullOrEmpty(step.instructions) && !string.IsNullOrEmpty(step.notes))
                         step.instructions = step.notes;
                     step.NormalizeType();
                 }
             }
+        }
+
+        public static ToolLibraryDocument LoadTools(string path)
+        {
+            if (!File.Exists(path))
+            {
+                var doc = new ToolLibraryDocument();
+                NormalizeToolLibrary(doc);
+                return doc;
+            }
+
+            string json = File.ReadAllText(path, Encoding.UTF8);
+            var loaded = Serializer.Deserialize<ToolLibraryDocument>(json) ?? new ToolLibraryDocument();
+            NormalizeToolLibrary(loaded);
+            return loaded;
+        }
+
+        public static void SaveTools(string path, ToolLibraryDocument doc)
+        {
+            NormalizeToolLibrary(doc);
+            string dir = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+
+            string temp = path + ".tmp";
+            string json = Serializer.Serialize(doc);
+            File.WriteAllText(temp, json, new UTF8Encoding(false));
+            if (File.Exists(path)) File.Delete(path);
+            File.Move(temp, path);
+        }
+
+        public static ToolLibraryDocument CloneToolLibrary(ToolLibraryDocument source)
+        {
+            string json = Serializer.Serialize(source);
+            var clone = Serializer.Deserialize<ToolLibraryDocument>(json);
+            NormalizeToolLibrary(clone);
+            return clone;
+        }
+
+        public static void NormalizeToolLibrary(ToolLibraryDocument doc)
+        {
+            if (doc == null) return;
+            if (doc.tools == null) doc.tools = new List<ToolInfo>();
+
+            int maxId = 0;
+            foreach (var tool in doc.tools)
+            {
+                if (tool != null && tool.id > maxId) maxId = tool.id;
+            }
+
+            foreach (var tool in doc.tools)
+            {
+                if (tool == null) continue;
+                if (tool.id <= 0)
+                {
+                    maxId++;
+                    tool.id = maxId;
+                }
+                if (tool.type == null) tool.type = "";
+                if (tool.diameter == null) tool.diameter = "";
+                if (tool.desc == null) tool.desc = "";
+                if (tool.image == null) tool.image = "";
+            }
+        }
+
+        public static int NextToolId(ToolLibraryDocument lib)
+        {
+            int max = 0;
+            if (lib == null || lib.tools == null) return 1;
+            foreach (var tool in lib.tools)
+            {
+                if (tool != null && tool.id > max) max = tool.id;
+            }
+            return max + 1;
+        }
+
+        public static int NextToolNum(ToolLibraryDocument lib)
+        {
+            int max = 0;
+            if (lib == null || lib.tools == null) return 1;
+            foreach (var tool in lib.tools)
+            {
+                if (tool != null && tool.num > max) max = tool.num;
+            }
+            return max + 1;
+        }
+
+        public static ToolInfo FindTool(ToolLibraryDocument lib, int toolId)
+        {
+            if (lib == null || lib.tools == null || toolId <= 0) return null;
+            foreach (var tool in lib.tools)
+            {
+                if (tool != null && tool.id == toolId)
+                    return tool;
+            }
+            return null;
+        }
+
+        public static bool IsToolReferenced(ProjectsDocument projects, int toolId)
+        {
+            if (projects == null || projects.projects == null || toolId <= 0) return false;
+            foreach (var project in projects.projects)
+            {
+                if (project.steps == null) continue;
+                foreach (var step in project.steps)
+                {
+                    if (step.toolId == toolId)
+                        return true;
+                }
+            }
+            return false;
         }
 
         public static ProjectsDocument CloneDocument(ProjectsDocument source)
@@ -316,6 +461,19 @@ namespace Plugins
             var clone = Serializer.Deserialize<ProjectsDocument>(json);
             NormalizeDocument(clone);
             return clone;
+        }
+        public static MaestroSettings ResolveForProject(MaestroSettings global, WorkflowProject project)
+        {
+            if (global == null) global = new MaestroSettings();
+            if (project == null || !project.overrideMachineSettings)
+                return global;
+
+            string json = Serializer.Serialize(global);
+            var merged = Serializer.Deserialize<MaestroSettings>(json) ?? new MaestroSettings();
+            merged.probe = project.probe ?? new ProbeSettings();
+            merged.toolChangePos = project.toolChangePos ?? new ToolChangePos();
+            merged.useSafeZForTc = project.useSafeZForTc;
+            return merged;
         }
     }
 
