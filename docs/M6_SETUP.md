@@ -64,14 +64,6 @@ the next `G0 Z` move can command Z=0 and cause a dangerous plunge. The plugin
 validates UCCNC `#5060` (probe success), LED 244 (ProbedOK), and `#5063`
 (touch Z) before any post-probe moves.
 
-### Optional: read values from your screenset instead
-
-If you already run a UCCNC screenset whose probing settings page exposes these
-values, tick **"Use screenset probing/tool-change fields"** in the Admin tab.
-Maestro then reads the plate location, distances, feeds and tool-change position
-from those screenset fields instead of the values above. Leave it **off** to keep
-Maestro fully self-contained.
-
 ## M6 mode (for T# M6 lines inside G-code files)
 
 1. Open **Configuration → General settings → Function settings**

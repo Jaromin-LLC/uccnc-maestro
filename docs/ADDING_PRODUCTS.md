@@ -118,8 +118,6 @@ Default for `op` steps: pre = moveToolChange, toolPrompt, autoZero; post = spind
 
 - **Test mode**: skips probing checks (demo only — never use when cutting)
 
-- **Use machine tool-change fields**: read TC position from UCCNC probing screen fields
-
 
 
 ## Seed config in repo

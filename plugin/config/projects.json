@@ -2,7 +2,6 @@
   "settings": {
     "mediaRoot": "C:\\UCCNC\\Maestro\\Media",
     "testMode": false,
-    "useMachineTcFields": false,
     "useSafeZForTc": true,
     "toolChangePos": { "x": 0, "y": 0, "z": 0, "zSafe": 0 },
     "probe": {

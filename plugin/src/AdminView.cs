@@ -42,7 +42,6 @@ namespace Plugins
         private CheckedListBox _postOpsList;
         private TextBox _mediaRootBox;
         private CheckBox _testModeBox;
-        private CheckBox _useMachineTcBox;
         private readonly ToolTip _toolTips;
         private GroupBox _globalMachineGroup;
         private Panel _globalMachinePanel;
@@ -472,18 +471,6 @@ namespace Plugins
             scroll.Controls.Add(pathsGroup);
             y += pathsGroup.Height + 12;
 
-            _useMachineTcBox = new CheckBox
-            {
-                Text = "Use UCCNC screenset probing / tool-change fields",
-                Location = new Point(12, y),
-                AutoSize = true,
-                Checked = false
-            };
-            _toolTips.SetToolTip(_useMachineTcBox,
-                "When enabled, Maestro reads probe and tool-change values from your UCCNC screenset (Probing page) instead of the settings below. " +
-                "Use this only if your screenset exposes those fields.");
-            scroll.Controls.Add(_useMachineTcBox); y += 30;
-
             _globalMachineGroup = new GroupBox
             {
                 Text = "Global machine settings (defaults for all projects)",
@@ -498,7 +485,6 @@ namespace Plugins
             scroll.Controls.Add(_globalMachineGroup);
             y += _globalMachineGroup.Height + 12;
 
-            _useMachineTcBox.CheckedChanged += (s, e) => { SettingsChanged(s, e); UpdateMachineSettingsVisibility(); };
             _globalMachineFields.HookChanged(SettingsChanged);
             _mediaRootBox.TextChanged += SettingsChanged;
             _testModeBox.CheckedChanged += SettingsChanged;
@@ -567,23 +553,19 @@ namespace Plugins
 
         private void UpdateMachineSettingsVisibility()
         {
-            bool useScreenset = _useMachineTcBox.Checked;
             bool hasProject = _selectedProject != null;
 
-            // Global settings stay visible and keep their values; they are greyed out
-            // when the UCCNC screenset fields are used instead.
             _globalMachineGroup.Visible = true;
-            _globalMachineGroup.Enabled = !useScreenset;
+            _globalMachineGroup.Enabled = true;
 
-            // Project overrides stay visible whenever a project is selected, and are
-            // greyed out (values retained) when the screenset fields are used.
+            // Project overrides stay visible whenever a project is selected.
             _projectOverrideGroup.Visible = hasProject;
-            _projectOverrideGroup.Enabled = !useScreenset;
-            _overrideMachineBox.Enabled = !useScreenset && hasProject;
+            _projectOverrideGroup.Enabled = true;
+            _overrideMachineBox.Enabled = hasProject;
 
             bool showOverride = hasProject && _overrideMachineBox.Checked;
             _projectOverridePanel.Visible = showOverride;
-            _projectOverrideFields.SetEnabled(showOverride && !useScreenset);
+            _projectOverrideFields.SetEnabled(showOverride);
         }
 
         private void SaveProjectMachineSettings()
@@ -856,7 +838,6 @@ namespace Plugins
 
                 _mediaRootBox.Text = s.mediaRoot ?? "";
                 _testModeBox.Checked = s.testMode;
-                _useMachineTcBox.Checked = s.useMachineTcFields;
                 _globalMachineFields.LoadFrom(s.probe, s.toolChangePos, s.useSafeZForTc);
             }
             finally
@@ -885,7 +866,6 @@ namespace Plugins
 
             s.mediaRoot = _mediaRootBox.Text.Trim();
             s.testMode = _testModeBox.Checked;
-            s.useMachineTcFields = _useMachineTcBox.Checked;
 
             bool useSafeZ = s.useSafeZForTc;
             _globalMachineFields.SaveTo(s.probe, s.toolChangePos, ref useSafeZ);

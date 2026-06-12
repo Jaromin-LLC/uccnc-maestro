@@ -51,14 +51,6 @@ namespace Plugins
             }
         }
 
-        // When true, source probe / tool-change values from the UCCNC screenset's
-        // probing-page fields. When false, Maestro uses its own stored settings and
-        // no particular screenset is required.
-        private bool UseFields
-        {
-            get { return _settings != null && _settings.useMachineTcFields; }
-        }
-
         private ProbeSettings Probe
         {
             get { return _settings.probe ?? new ProbeSettings(); }
@@ -69,42 +61,29 @@ namespace Plugins
             get { return _settings.toolChangePos ?? new ToolChangePos(); }
         }
 
-        // Prefer a non-zero screenset field value (only when enabled), otherwise the
-        // configured plugin setting.
-        private double Cfg(int fieldId, double settingValue)
-        {
-            if (UseFields)
-            {
-                double val = _uc.Getfielddouble(true, fieldId);
-                if (val != 0) return val;
-            }
-            return settingValue;
-        }
-
         private bool TcSafeZEnabled()
         {
-            if (UseFields) return _uc.Getcheckboxstate(true, 20330);
             return _settings.useSafeZForTc;
         }
 
         private double GetSafeZ()
         {
-            return Cfg(20300, Tc.zSafe);
+            return Tc.zSafe;
         }
 
         private double GetTcX()
         {
-            return Cfg(20314, Tc.x);
+            return Tc.x;
         }
 
         private double GetTcY()
         {
-            return Cfg(20315, Tc.y);
+            return Tc.y;
         }
 
         private double GetTcZ()
         {
-            return Cfg(20316, Tc.z);
+            return Tc.z;
         }
 
         public bool Preflight(Action<string> status)
@@ -116,19 +95,11 @@ namespace Plugins
 
             if (!TestMode)
             {
-                double cfgXPlate = Cfg(20302, Probe.xPlate);
-                double cfgYPlate = Cfg(20303, Probe.yPlate);
-                double cfgProbeDist = Cfg(20305, Probe.dist);
-                double cfgProbeFeed = Cfg(20309, Probe.feedFast);
-
-                if ((cfgXPlate == 0 && cfgYPlate == 0) || cfgProbeDist == 0 || cfgProbeFeed == 0)
+                if ((Probe.xPlate == 0 && Probe.yPlate == 0) || Probe.dist == 0 || Probe.feedFast == 0)
                 {
-                    string where = UseFields
-                        ? "on the UCCNC probing settings page"
-                        : "in the Admin tab under Probing / Tool Change";
                     ShowMessage(
                         "Tool setter probing is not configured.\n\n" +
-                        "Set the Fixed Plate X/Y location, probe distance and probe feedrates " + where + " (one-time machine setup), then try again.",
+                        "Set the Fixed Plate X/Y location, probe distance and probe feedrates in the Admin tab under Probing / Tool Change (one-time machine setup), then try again.",
                         "Probing Not Configured", MessageBoxIcon.Error);
                     if (status != null) status("Aborted - configure tool setter probing first.");
                     return false;
@@ -240,24 +211,31 @@ namespace Plugins
                 return true;
             }
 
-            bool plateRapid = UseFields ? _uc.Getcheckboxstate(true, 20684) : Probe.plateRapid;
+            bool plateRapid = Probe.plateRapid;
             bool tcSafeZ = TcSafeZEnabled();
             double safeZ = GetSafeZ();
 
-            double plateZero = Cfg(20327, Probe.plateZero);
-            double xPlate = Cfg(20302, Probe.xPlate);
-            double yPlate = Cfg(20303, Probe.yPlate);
-            double probeDist = Cfg(20305, Probe.dist);
-            double retractDist = Cfg(20306, Probe.retractDist);
-            double firstProbeFeed = Cfg(20309, Probe.feedFast);
-            double secProbeFeed = Cfg(20310, Probe.feedSlow);
-            double plateRapidZ = Cfg(20312, Probe.plateRapidZ);
+            double plateZero = Probe.plateZero;
+            double xPlate = Probe.xPlate;
+            double yPlate = Probe.yPlate;
+            double probeDist = Probe.dist;
+            double retractDist = Probe.retractDist;
+            double firstProbeFeed = Probe.feedFast;
+            double secProbeFeed = Probe.feedSlow;
+            double plateRapidZ = Probe.plateRapidZ;
 
             string feedOr = _uc.Getfield(true, 232);
             double currentFeedOr = Convert.ToDouble(feedOr.Replace("%", string.Empty), CultureInfo.InvariantCulture);
             double feedFactor = 100 / currentFeedOr;
             firstProbeFeed = firstProbeFeed * feedFactor;
             secProbeFeed = secProbeFeed * feedFactor;
+
+            // G53 (move in machine coordinates) is only honored in G90 absolute mode.
+            // If the controller is left in G91, G53 is ignored and the move runs in the
+            // active work offset - sending the plate move to the wrong location. Force
+            // absolute mode before any G53 move.
+            _uc.Codesync("G90");
+            WaitForIdle();
 
             if (tcSafeZ)
             {
@@ -405,13 +383,20 @@ namespace Plugins
 
         public bool SetCurrentTool(int toolNum, Action<string> status)
         {
-            _uc.Setcurrenttool(toolNum);
-            if (UseFields)
+            // Older UCCNC releases (e.g. 2019 builds) do not expose Setcurrenttool on the
+            // plugin interface. A direct call would throw MissingMethodException when this
+            // method is JIT-compiled, so resolve it via reflection and skip when absent.
+            var setCurrentTool = typeof(Plugininterface.Entry).GetMethod("Setcurrenttool", new[] { typeof(int) });
+            if (setCurrentTool != null)
             {
-                _uc.Setfieldtext(true, toolNum.ToString(), 20326);
-                _uc.Validatefield(true, 20326);
+                setCurrentTool.Invoke(_uc, new object[] { toolNum });
+                if (status != null) status("Tool set to T" + toolNum);
             }
-            if (status != null) status("Tool set to T" + toolNum);
+            else
+            {
+                if (status != null) status("Tool T" + toolNum + " confirmed (this UCCNC version cannot set the current tool number).");
+            }
+
             return true;
         }
 

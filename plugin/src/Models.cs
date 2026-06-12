@@ -45,14 +45,7 @@ namespace Plugins
         public ProbeSettings probe { get; set; }
         public bool testMode { get; set; }
 
-        // When true, probe / tool-change values are read from the UCCNC screenset's
-        // probing-page fields (e.g. a screenset that exposes them). When false
-        // (default) Maestro is fully self-contained and uses the values below, so
-        // no particular screenset is required.
-        public bool useMachineTcFields { get; set; }
-
-        // Retract to Safe Z before tool-change / probe moves. Used when
-        // useMachineTcFields is false.
+        // Retract to Safe Z before tool-change / probe moves.
         public bool useSafeZForTc { get; set; }
 
         public MaestroSettings()
@@ -60,7 +53,6 @@ namespace Plugins
             mediaRoot = @"C:\UCCNC\Maestro\Media";
             toolChangePos = new ToolChangePos();
             probe = new ProbeSettings();
-            useMachineTcFields = false;
             useSafeZForTc = true;
         }
     }
