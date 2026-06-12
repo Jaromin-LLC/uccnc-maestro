@@ -313,8 +313,40 @@ namespace Plugins
             _uc.Setfield(true, plateZero, 228);
             _uc.Validatefield(true, 228);
             _uc.Wait(250);
+
+            PropagateZeroToAllOffsets(status);
+
             if (status != null) status("Tool zeroed on fixed plate.");
             return true;
+        }
+
+        /// <summary>
+        /// Setting the Z DRO only re-zeros the active work offset. Programs that cycle
+        /// through multiple fixture offsets (G54-G59) for N-up parts need the same Z
+        /// plane in every offset, otherwise parts after the first run with the previous
+        /// tool's length. Copy the active offset's Z origin to all six fixture offsets.
+        /// </summary>
+        private void PropagateZeroToAllOffsets(Action<string> status)
+        {
+            // #5220 = active coordinate system (1 = G54 ... 6 = G59).
+            int active = (int)_uc.Getvar(5220);
+            if (active < 1 || active > 6)
+            {
+                if (status != null) status("WARNING - unknown active work offset; Z zero applied to the active offset only.");
+                return;
+            }
+
+            // Z origin of the active offset in machine coords: #5223 (G54) ... #5323 (G59).
+            double originZ = _uc.Getvar(5203 + active * 20);
+
+            for (int p = 1; p <= 6; p++)
+            {
+                if (p == active) continue;
+                _uc.Codesync("G10 L2 P" + p + " Z" + Dbl2Str(originZ));
+                WaitForIdle();
+            }
+
+            if (status != null) status("Z zero applied to all work offsets (G54-G59).");
         }
 
         /// <summary>
