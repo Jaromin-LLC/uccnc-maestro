@@ -23,7 +23,7 @@ namespace Plugins
         public MaestroForm(UCCNCplugin plugin)
         {
             _plugin = plugin;
-            Text = "Jaromin CNC Maestro";
+            Text = "Jaromin CNC Maestro  -  build " + BuildInfo.Id;
             Size = new Size(1180, 760);
             StartPosition = FormStartPosition.CenterScreen;
             MinimumSize = new Size(960, 640);

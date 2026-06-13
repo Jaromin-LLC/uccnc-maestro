@@ -62,8 +62,28 @@ function Invoke-Build {
 
     New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
 
-    $sourceFiles = Get-ChildItem -Path $SrcDir -Filter "*.cs" -Recurse | Sort-Object FullName
+    # Exclude the checked-in BuildInfo.cs fallback; a stamped copy is generated below.
+    $sourceFiles = Get-ChildItem -Path $SrcDir -Filter "*.cs" -Recurse |
+        Where-Object { $_.Name -ne "BuildInfo.cs" } | Sort-Object FullName
     if ($sourceFiles.Count -eq 0) { throw "No C# source files found under $SrcDir" }
+
+    # Stamp a build id (timestamp + git short hash) so the running plugin is verifiable.
+    $stamp = Get-Date -Format "yyyy-MM-dd HH:mm"
+    $gitHash = ""
+    try { $gitHash = (& git -C $RepoRoot rev-parse --short HEAD 2>$null) } catch { }
+    if ([string]::IsNullOrWhiteSpace($gitHash)) { $buildId = $stamp }
+    else { $buildId = "$stamp ($($gitHash.Trim()))" }
+    $buildInfoPath = Join-Path $BuildDir "BuildInfo.cs"
+    @"
+namespace Plugins
+{
+    internal static class BuildInfo
+    {
+        public const string Id = "$buildId";
+    }
+}
+"@ | Set-Content -Path $buildInfoPath -Encoding UTF8
+    Write-Host "Build id: $buildId"
 
     $refs = @(
         $pluginInterface,
@@ -74,7 +94,8 @@ function Invoke-Build {
         "System.Web.Extensions.dll"
     )
     $refArgs = $refs | ForEach-Object { "/reference:`"$_`"" }
-    $srcArgs = $sourceFiles | ForEach-Object { "`"$($_.FullName)`"" }
+    $srcArgs = @($sourceFiles | ForEach-Object { "`"$($_.FullName)`"" })
+    $srcArgs += "`"$buildInfoPath`""
 
     $outPath = Join-Path $BuildDir $DllName
     if (Test-Path $outPath) { Remove-Item $outPath -Force }

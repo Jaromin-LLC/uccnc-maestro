@@ -363,19 +363,30 @@ namespace Plugins
         /// plane in every offset, otherwise parts after the first run with the previous
         /// tool's length.
         ///
-        /// This is called with the tool parked at the plate touch point, so we use
-        /// G10 L20 ("set offset so the CURRENT position equals this value") to make every
-        /// fixture offset read plateZero at the tool tip. This deliberately avoids reading
-        /// the active coordinate system (#5220) and offset-origin variables (#52xx), which
-        /// don't report reliably across UCCNC builds. Only Z is touched; no motion occurs.
+        /// Called with the tool parked at the plate touch point. Rather than reading the
+        /// offset-origin variables (#52xx) or relying on G10 L2/L20 P-addressing - neither
+        /// behaves reliably across UCCNC builds here - we use the one mechanism proven to
+        /// work on this machine: making a fixture active and writing the Z DRO zeroes that
+        /// fixture. We briefly cycle each fixture active, zero it to plateZero, then restore
+        /// the original active fixture. No motion occurs; only each offset's Z is set.
         /// </summary>
         private void PropagateZeroToAllOffsets(double plateZero, Action<string> status)
         {
+            int active = (int)_uc.Getvar(5220);
+            if (active < 1 || active > 6) active = 1;
+
             for (int p = 1; p <= 6; p++)
             {
-                _uc.Codesync("G10 L20 P" + p + " Z" + Dbl2Str(plateZero));
+                _uc.Codesync("G" + (53 + p));
                 WaitForIdle();
+                _uc.Setfield(true, plateZero, 228);
+                _uc.Validatefield(true, 228);
+                _uc.Wait(150);
             }
+
+            // Restore the coordinate system that was active before propagation.
+            _uc.Codesync("G" + (53 + active));
+            WaitForIdle();
 
             if (status != null) status("Z zero applied to all work offsets (G54-G59).");
         }

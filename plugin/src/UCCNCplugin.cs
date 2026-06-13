@@ -35,7 +35,8 @@ namespace Plugins
         public void Configure_event()
         {
             MessageBox.Show(
-                "Jaromin Maestro stores configuration in:\n" + MaestroPaths.ProjectsFile +
+                "Jaromin Maestro\nBuild: " + BuildInfo.Id +
+                "\n\nConfiguration is stored in:\n" + MaestroPaths.ProjectsFile +
                 "\n\nUse the Admin tab in the Maestro window to edit workflows.",
                 "Jaromin Maestro", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
