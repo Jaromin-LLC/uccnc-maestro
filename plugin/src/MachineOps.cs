@@ -10,6 +10,7 @@ namespace Plugins
         private readonly MaestroSettings _settings;
         private readonly Form _owner;
         private readonly Action<Action> _uiInvoke;
+        private ToolInfo _probeTool;
 
         public MachineOps(Plugininterface.Entry uc, MaestroSettings settings, WorkflowProject project, Form owner, Action<Action> uiInvoke)
         {
@@ -24,6 +25,15 @@ namespace Plugins
             get { return _settings != null && _settings.testMode; }
         }
 
+        /// <summary>
+        /// Sets the tool whose per-tool probe settings (edge-probe offsets / rotate prompt)
+        /// apply to the next ProbeFixedPlate call. Null restores center probing.
+        /// </summary>
+        public void SetActiveProbeTool(ToolInfo tool)
+        {
+            _probeTool = tool;
+        }
+
         private void ShowMessage(string text, string caption, MessageBoxIcon icon)
         {
             Action show = () =>
@@ -36,6 +46,25 @@ namespace Plugins
 
             if (_uiInvoke != null) _uiInvoke(show);
             else show();
+        }
+
+        private bool ConfirmMessage(string text, string caption, MessageBoxIcon icon)
+        {
+            DialogResult result = DialogResult.Cancel;
+            Action show = () =>
+            {
+                if (_owner != null && !_owner.IsDisposed)
+                    result = MessageBox.Show(_owner, text, caption, MessageBoxButtons.OKCancel, icon);
+                else
+                    result = MessageBox.Show(text, caption, MessageBoxButtons.OKCancel, icon);
+            };
+
+            // InvokeUi marshals synchronously (Control.Invoke), so result is populated
+            // before this returns.
+            if (_uiInvoke != null) _uiInvoke(show);
+            else show();
+
+            return result == DialogResult.OK;
         }
 
         private static string Dbl2Str(double val)
@@ -224,6 +253,14 @@ namespace Plugins
             double secProbeFeed = Probe.feedSlow;
             double plateRapidZ = Probe.plateRapidZ;
 
+            // Per-tool edge-probe: shift the probe point so a cutting edge lands over the
+            // puck instead of the (debris-prone, possibly relieved) tool center.
+            double probeXOffset = _probeTool != null ? _probeTool.probeXOffset : 0;
+            double probeYOffset = _probeTool != null ? _probeTool.probeYOffset : 0;
+            bool edgeProbePrompt = _probeTool != null && _probeTool.edgeProbePrompt;
+            double xProbe = xPlate + probeXOffset;
+            double yProbe = yPlate + probeYOffset;
+
             string feedOr = _uc.Getfield(true, 232);
             double currentFeedOr = Convert.ToDouble(feedOr.Replace("%", string.Empty), CultureInfo.InvariantCulture);
             double feedFactor = 100 / currentFeedOr;
@@ -243,7 +280,7 @@ namespace Plugins
                 WaitForIdle();
             }
 
-            _uc.Codesync("G53 G0 X" + Dbl2Str(xPlate) + " Y" + Dbl2Str(yPlate));
+            _uc.Codesync("G53 G0 X" + Dbl2Str(xProbe) + " Y" + Dbl2Str(yProbe));
             WaitForIdle();
 
             if (_uc.GetLED(37))
@@ -259,6 +296,19 @@ namespace Plugins
             {
                 _uc.Codesync("G53 G0 Z" + Dbl2Str(plateRapidZ));
                 WaitForIdle();
+            }
+
+            if (edgeProbePrompt)
+            {
+                if (status != null) status("Waiting - rotate spindle so a cutting edge is over the plate.");
+                if (!ConfirmMessage(
+                        "Rotate the spindle by hand so a cutting edge is directly over the touch plate, then click OK.\n\n" +
+                        "Click Cancel to abort probing.",
+                        "Position Cutting Edge", MessageBoxIcon.Information))
+                {
+                    if (status != null) status("Aborted - edge probe canceled.");
+                    return false;
+                }
             }
 
             _uc.Codesync("G90");
@@ -292,7 +342,16 @@ namespace Plugins
             _uc.Validatefield(true, 228);
             _uc.Wait(250);
 
-            PropagateZeroToAllOffsets(status);
+            PropagateZeroToAllOffsets(plateZero, status);
+
+            // Lift clear of the plate after zeroing so the program's first move
+            // doesn't drag the tool across the plate/part. Uses the same Safe Z
+            // and checkbox that gate the pre-probe approach retract.
+            if (tcSafeZ)
+            {
+                _uc.Codesync("G53 G0 Z" + Dbl2Str(safeZ));
+                WaitForIdle();
+            }
 
             if (status != null) status("Tool zeroed on fixed plate.");
             return true;
@@ -302,25 +361,19 @@ namespace Plugins
         /// Setting the Z DRO only re-zeros the active work offset. Programs that cycle
         /// through multiple fixture offsets (G54-G59) for N-up parts need the same Z
         /// plane in every offset, otherwise parts after the first run with the previous
-        /// tool's length. Copy the active offset's Z origin to all six fixture offsets.
+        /// tool's length.
+        ///
+        /// This is called with the tool parked at the plate touch point, so we use
+        /// G10 L20 ("set offset so the CURRENT position equals this value") to make every
+        /// fixture offset read plateZero at the tool tip. This deliberately avoids reading
+        /// the active coordinate system (#5220) and offset-origin variables (#52xx), which
+        /// don't report reliably across UCCNC builds. Only Z is touched; no motion occurs.
         /// </summary>
-        private void PropagateZeroToAllOffsets(Action<string> status)
+        private void PropagateZeroToAllOffsets(double plateZero, Action<string> status)
         {
-            // #5220 = active coordinate system (1 = G54 ... 6 = G59).
-            int active = (int)_uc.Getvar(5220);
-            if (active < 1 || active > 6)
-            {
-                if (status != null) status("WARNING - unknown active work offset; Z zero applied to the active offset only.");
-                return;
-            }
-
-            // Z origin of the active offset in machine coords: #5223 (G54) ... #5323 (G59).
-            double originZ = _uc.Getvar(5203 + active * 20);
-
             for (int p = 1; p <= 6; p++)
             {
-                if (p == active) continue;
-                _uc.Codesync("G10 L2 P" + p + " Z" + Dbl2Str(originZ));
+                _uc.Codesync("G10 L20 P" + p + " Z" + Dbl2Str(plateZero));
                 WaitForIdle();
             }
 

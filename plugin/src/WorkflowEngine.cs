@@ -256,6 +256,8 @@ namespace Plugins
                 return true;
             }
 
+            ops.SetActiveProbeTool(GetToolForStep(step));
+
             foreach (string opId in step.preOps)
             {
                 if (_abortRequested) return false;

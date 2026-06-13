@@ -66,6 +66,13 @@ namespace Plugins
         public string desc { get; set; }
         public string image { get; set; }
 
+        // Edge-probe support for tools without a usable center (fly / surfacing cutters).
+        // Offsets shift the probe point off the fixed plate XY so a cutting edge lands over
+        // the puck; edgeProbePrompt pauses to let the operator rotate a blade into place.
+        public double probeXOffset { get; set; }
+        public double probeYOffset { get; set; }
+        public bool edgeProbePrompt { get; set; }
+
         public ToolInfo()
         {
             id = 0;
@@ -74,6 +81,9 @@ namespace Plugins
             diameter = "";
             desc = "";
             image = "";
+            probeXOffset = 0;
+            probeYOffset = 0;
+            edgeProbePrompt = false;
         }
 
         public string DisplayLabel()

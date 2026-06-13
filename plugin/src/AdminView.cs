@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Windows.Forms;
@@ -35,6 +36,9 @@ namespace Plugins
         private TextBox _libToolDescBox;
         private TextBox _libToolImageBox;
         private PictureBox _libToolImagePreview;
+        private TextBox _libToolProbeXBox;
+        private TextBox _libToolProbeYBox;
+        private CheckBox _libToolEdgeProbeCheck;
         private TextBox _photoBox;
         private TextBox _videoBox;
         private PictureBox _photoPreview;
@@ -439,6 +443,28 @@ namespace Plugins
             _libToolImagePreview = MakeImagePicker(new Point(120, y), "Click to add\ntool image",
                 PickLibraryToolImage);
             editor.Controls.Add(_libToolImagePreview);
+            y += _libToolImagePreview.Height + 8;
+
+            var probeXLabel = MkLabel("Probe X offset", 8, y);
+            _toolTips.SetToolTip(probeXLabel, "Shifts the probe point off the fixed plate X so a cutting edge lands over the puck (edge probe). 0 = probe at center.");
+            editor.Controls.Add(probeXLabel);
+            _libToolProbeXBox = MkText(120, y, 120);
+            editor.Controls.Add(_libToolProbeXBox); y += 30;
+
+            var probeYLabel = MkLabel("Probe Y offset", 8, y);
+            _toolTips.SetToolTip(probeYLabel, "Shifts the probe point off the fixed plate Y so a cutting edge lands over the puck (edge probe). 0 = probe at center.");
+            editor.Controls.Add(probeYLabel);
+            _libToolProbeYBox = MkText(120, y, 120);
+            editor.Controls.Add(_libToolProbeYBox); y += 30;
+
+            _libToolEdgeProbeCheck = new CheckBox
+            {
+                Text = "Prompt to rotate spindle before probing (edge probe)",
+                Location = new Point(8, y),
+                AutoSize = true
+            };
+            _toolTips.SetToolTip(_libToolEdgeProbeCheck, "For tools with no usable center (fly / surfacing cutters): pauses before probing so the operator can rotate a cutting edge over the plate.");
+            editor.Controls.Add(_libToolEdgeProbeCheck); y += 32;
 
             HookLibraryToolChanges();
             split.Panel2.Controls.Add(editor);
@@ -1152,6 +1178,9 @@ namespace Plugins
                 _libToolDiaBox.Text = _selectedLibraryTool.diameter ?? "";
                 _libToolDescBox.Text = _selectedLibraryTool.desc ?? "";
                 _libToolImageBox.Text = _selectedLibraryTool.image ?? "";
+                _libToolProbeXBox.Text = _selectedLibraryTool.probeXOffset.ToString(CultureInfo.InvariantCulture);
+                _libToolProbeYBox.Text = _selectedLibraryTool.probeYOffset.ToString(CultureInfo.InvariantCulture);
+                _libToolEdgeProbeCheck.Checked = _selectedLibraryTool.edgeProbePrompt;
                 LoadImagePreview(_libToolImagePreview, _selectedLibraryTool.image);
             }
             finally { _loadingEditor = false; }
@@ -1167,6 +1196,9 @@ namespace Plugins
                 _libToolDiaBox.Text = "";
                 _libToolDescBox.Text = "";
                 _libToolImageBox.Text = "";
+                _libToolProbeXBox.Text = "";
+                _libToolProbeYBox.Text = "";
+                _libToolEdgeProbeCheck.Checked = false;
                 if (_libToolImagePreview.Image != null) { var old = _libToolImagePreview.Image; _libToolImagePreview.Image = null; old.Dispose(); }
             }
             finally { _loadingEditor = false; }
@@ -1179,6 +1211,17 @@ namespace Plugins
             _selectedLibraryTool.diameter = _libToolDiaBox.Text.Trim();
             _selectedLibraryTool.desc = _libToolDescBox.Text.Trim();
             _selectedLibraryTool.image = _libToolImageBox.Text.Trim();
+            _selectedLibraryTool.probeXOffset = ParseToolOffset(_libToolProbeXBox.Text);
+            _selectedLibraryTool.probeYOffset = ParseToolOffset(_libToolProbeYBox.Text);
+            _selectedLibraryTool.edgeProbePrompt = _libToolEdgeProbeCheck.Checked;
+        }
+
+        private static double ParseToolOffset(string text)
+        {
+            double value;
+            if (double.TryParse((text ?? "").Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out value))
+                return value;
+            return 0;
         }
 
         private void HookLibraryToolChanges()
@@ -1186,6 +1229,9 @@ namespace Plugins
             _libToolTypeBox.TextChanged += LibraryToolChanged;
             _libToolDiaBox.TextChanged += LibraryToolChanged;
             _libToolDescBox.TextChanged += LibraryToolChanged;
+            _libToolProbeXBox.TextChanged += LibraryToolChanged;
+            _libToolProbeYBox.TextChanged += LibraryToolChanged;
+            _libToolEdgeProbeCheck.CheckedChanged += LibraryToolChanged;
         }
 
         private void LibraryToolChanged(object sender, EventArgs e)

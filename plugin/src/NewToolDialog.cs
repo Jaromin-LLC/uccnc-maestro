@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Globalization;
 using System.IO;
 using System.Windows.Forms;
 
@@ -12,6 +13,9 @@ namespace Plugins
         private readonly TextBox _descBox;
         private readonly TextBox _imageBox;
         private readonly PictureBox _imagePreview;
+        private readonly TextBox _probeXBox;
+        private readonly TextBox _probeYBox;
+        private readonly CheckBox _edgeProbeCheck;
 
         public ToolInfo Result { get; private set; }
 
@@ -22,7 +26,7 @@ namespace Plugins
             StartPosition = FormStartPosition.CenterParent;
             MaximizeBox = false;
             MinimizeBox = false;
-            ClientSize = new Size(460, 320);
+            ClientSize = new Size(460, 430);
             Font = new Font("Segoe UI", 9F);
 
             int y = 12;
@@ -60,6 +64,22 @@ namespace Plugins
             _imagePreview.Click += (s, e) => PickImage(mediaRoot);
             Controls.Add(_imagePreview); y += 130;
 
+            Controls.Add(MkLabel("Probe X offset", 12, y));
+            _probeXBox = MkText(100, y, 120);
+            Controls.Add(_probeXBox); y += 30;
+
+            Controls.Add(MkLabel("Probe Y offset", 12, y));
+            _probeYBox = MkText(100, y, 120);
+            Controls.Add(_probeYBox); y += 30;
+
+            _edgeProbeCheck = new CheckBox
+            {
+                Text = "Prompt to rotate spindle before probing (edge probe)",
+                Location = new Point(12, y),
+                AutoSize = true
+            };
+            Controls.Add(_edgeProbeCheck); y += 32;
+
             var okBtn = new Button { Text = "OK", DialogResult = DialogResult.OK, Location = new Point(280, y), Width = 75 };
             var cancelBtn = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Location = new Point(365, y), Width = 75 };
             okBtn.Click += OkBtn_Click;
@@ -74,6 +94,9 @@ namespace Plugins
                 _diaBox.Text = seed.diameter ?? "";
                 _descBox.Text = seed.desc ?? "";
                 _imageBox.Text = seed.image ?? "";
+                _probeXBox.Text = seed.probeXOffset.ToString(CultureInfo.InvariantCulture);
+                _probeYBox.Text = seed.probeYOffset.ToString(CultureInfo.InvariantCulture);
+                _edgeProbeCheck.Checked = seed.edgeProbePrompt;
                 LoadImagePreview(mediaRoot);
             }
         }
@@ -112,8 +135,19 @@ namespace Plugins
                 type = _typeBox.Text.Trim(),
                 diameter = _diaBox.Text.Trim(),
                 desc = _descBox.Text.Trim(),
-                image = _imageBox.Text.Trim()
+                image = _imageBox.Text.Trim(),
+                probeXOffset = ParseDouble(_probeXBox.Text),
+                probeYOffset = ParseDouble(_probeYBox.Text),
+                edgeProbePrompt = _edgeProbeCheck.Checked
             };
+        }
+
+        private static double ParseDouble(string text)
+        {
+            double value;
+            if (double.TryParse((text ?? "").Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out value))
+                return value;
+            return 0;
         }
 
         private static Label MkLabel(string text, int x, int y)
