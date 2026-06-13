@@ -170,7 +170,24 @@ function Invoke-Package {
     Write-Host "[OK] Staged payload -> $stageDir"
 
     if (Test-Path $zipPath) { Remove-Item -Force $zipPath }
-    Compress-Archive -Path (Join-Path $stageDir "*") -DestinationPath $zipPath
+
+    # Antivirus (e.g. Defender real-time) can briefly lock freshly-copied files,
+    # which makes Compress-Archive fail. Retry a few times before giving up.
+    $zipped = $false
+    for ($attempt = 1; $attempt -le 5; $attempt++) {
+        try {
+            Compress-Archive -Path (Join-Path $stageDir "*") -DestinationPath $zipPath -Force -ErrorAction Stop
+            $zipped = $true
+            break
+        } catch {
+            if (Test-Path $zipPath) { Remove-Item -Force $zipPath -ErrorAction SilentlyContinue }
+            Write-Host "  Package attempt $attempt failed (file locked?); retrying..." -ForegroundColor Yellow
+            Start-Sleep -Milliseconds 800
+        }
+    }
+    if (-not $zipped -or -not (Test-Path $zipPath)) {
+        throw "Could not create $zipPath - a file in $stageDir is locked (likely antivirus). Close any editors viewing the staged files and retry."
+    }
     Write-Host "[OK] Package -> $zipPath" -ForegroundColor Green
     Write-Host ""
     Write-Host "Hand the zip to the target machine, unzip it, and run Install.bat."

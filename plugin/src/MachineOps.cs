@@ -338,10 +338,6 @@ namespace Plugins
             _uc.Codesync("G0 Z" + Dbl2Str(zNew));
             WaitForIdle();
 
-            _uc.Setfield(true, plateZero, 228);
-            _uc.Validatefield(true, 228);
-            _uc.Wait(250);
-
             PropagateZeroToAllOffsets(plateZero, status);
 
             // Lift clear of the plate after zeroing so the program's first move
@@ -378,15 +374,12 @@ namespace Plugins
             for (int p = 1; p <= 6; p++)
             {
                 _uc.Codesync("G" + (53 + p));
-                WaitForIdle();
                 _uc.Setfield(true, plateZero, 228);
                 _uc.Validatefield(true, 228);
-                _uc.Wait(150);
             }
 
             // Restore the coordinate system that was active before propagation.
             _uc.Codesync("G" + (53 + active));
-            WaitForIdle();
 
             if (status != null) status("Z zero applied to all work offsets (G54-G59).");
         }
