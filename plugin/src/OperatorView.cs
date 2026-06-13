@@ -150,12 +150,13 @@ namespace Plugins
             _stepGrid.Columns.Add("Status", "Status");
             _stepGrid.Columns.Add("Step", "#");
             _stepGrid.Columns.Add("Operation", "Operation");
+            _stepGrid.Columns.Add("ToolNum", "Tool #");
             _stepGrid.Columns.Add("Tool", "Tool");
-            _stepGrid.Columns.Add("Diameter", "Dia.");
             _stepGrid.Columns.Add("Runtime", "Runtime");
-            _stepGrid.Columns.Add(new DataGridViewDisableButtonColumn { Name = "Run", HeaderText = "Action", Text = "RUN", UseColumnTextForButtonValue = true, AutoSizeMode = DataGridViewAutoSizeColumnMode.None, Width = 120 });
+            _stepGrid.Columns.Add(new DataGridViewDisableButtonColumn { Name = "Run", HeaderText = "Action", Text = "RUN", UseColumnTextForButtonValue = true, AutoSizeMode = DataGridViewAutoSizeColumnMode.None, Width = 150 });
             _stepGrid.Columns["Step"].FillWeight = 30;
-            _stepGrid.Columns["Diameter"].FillWeight = 45;
+            _stepGrid.Columns["ToolNum"].FillWeight = 35;
+            _stepGrid.Columns["Tool"].FillWeight = 110;
             _stepGrid.Columns["Runtime"].FillWeight = 40;
             _stepGrid.CellContentClick += StepGrid_CellContentClick;
             _stepGrid.CellFormatting += StepGrid_CellFormatting;
@@ -429,11 +430,11 @@ namespace Plugins
                 _stepStatuses[i] = status;
 
                 var tool = step.IsGate ? null : _engine.GetToolForStep(step);
-                string toolText = tool != null ? tool.type : (step.IsGate ? "-" : "");
-                string dia = tool != null ? tool.diameter : (step.IsGate ? "-" : "");
+                string toolNum = tool != null ? tool.num.ToString() : (step.IsGate ? "-" : "");
+                string toolText = tool != null ? tool.SizeDescription() : (step.IsGate ? "-" : "");
                 int lastRun = RunStateStore.GetLastRunSeconds(_engine.State, _currentProject.id, i);
 
-                _stepGrid.Rows.Add(StatusText(GetRowVisualState(i)), (i + 1).ToString(), step.label, toolText, dia, FormatRuntime(lastRun));
+                _stepGrid.Rows.Add(StatusText(GetRowVisualState(i)), (i + 1).ToString(), step.label, toolNum, toolText, FormatRuntime(lastRun));
             }
 
             UpdateRunButtonStates();
@@ -534,6 +535,10 @@ namespace Plugins
             {
                 var cell = _stepGrid.Rows[r].Cells[runIndex] as DataGridViewDisableButtonCell;
                 if (cell == null) continue;
+
+                var step = _currentProject.steps[r];
+                bool toolChange = step.IsOp && step.preOps != null && step.preOps.Contains(AutoOpIds.ToolPrompt);
+                cell.Label = toolChange ? "CHANGE TOOL" : "RUN";
 
                 RowVisualState visual = GetRowVisualState(r);
                 _stepGrid.Rows[r].Cells[statusIndex].Value = StatusText(visual);

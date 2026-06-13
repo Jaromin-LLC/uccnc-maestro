@@ -73,6 +73,8 @@ namespace Plugins
             AutoOpIds.AutoZero + " | Auto zero (probe)",
             AutoOpIds.SpindleOff + " | Spindle off",
             AutoOpIds.GotoWorkZero + " | Go to work zero",
+            AutoOpIds.ParkG28 + " | Park (G28)",
+            AutoOpIds.ParkG30 + " | Park (G30)",
             AutoOpIds.CustomMdi + " | Custom MDI"
         };
 
@@ -355,10 +357,10 @@ namespace Plugins
             sy += 34;
 
             stepGroup.Controls.Add(MkLabel("Pre Ops", 12, sy));
-            _preOpsList = new CheckedListBox { Location = new Point(124, sy), Size = new Size(220, 100) };
+            _preOpsList = new CheckedListBox { Location = new Point(124, sy), Size = new Size(220, 140) };
             stepGroup.Controls.Add(_preOpsList);
             stepGroup.Controls.Add(MkLabel("Post Ops", 354, sy));
-            _postOpsList = new CheckedListBox { Location = new Point(434, sy), Size = new Size(220, 100) };
+            _postOpsList = new CheckedListBox { Location = new Point(434, sy), Size = new Size(220, 140) };
             stepGroup.Controls.Add(_postOpsList);
             stepGroup.Height = Math.Max(sy + _postOpsList.Height + 12, 44 + _photoPreview.Height + 12);
 

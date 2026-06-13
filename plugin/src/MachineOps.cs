@@ -232,6 +232,37 @@ namespace Plugins
             return true;
         }
 
+        /// <summary>
+        /// Parks the spindle using a UCCNC predefined position move (G28 = primary
+        /// reference, G30 = secondary park). Lifts to Safe Z first (when enabled) so the
+        /// tool clears the part before traveling. The G28/G30 target positions are
+        /// configured in UCCNC itself.
+        /// </summary>
+        public bool Park(string parkCode, Action<string> status)
+        {
+            if (TestMode)
+            {
+                if (status != null) status("TEST MODE - park (" + parkCode + ") skipped.");
+                return true;
+            }
+
+            _uc.Codesync("G90");
+            WaitForIdle();
+
+            if (TcSafeZEnabled())
+            {
+                _uc.Codesync("G53 G0 Z" + Dbl2Str(GetSafeZ()));
+                WaitForIdle();
+            }
+
+            if (status != null) status("Parking (" + parkCode + ")...");
+            _uc.Codesync(parkCode);
+            WaitForIdle();
+
+            if (status != null) status("Parked (" + parkCode + ").");
+            return true;
+        }
+
         public bool ProbeFixedPlate(Action<string> status)
         {
             if (TestMode)
@@ -558,6 +589,10 @@ namespace Plugins
                     return ProbeFixedPlate(status);
                 case AutoOpIds.GotoWorkZero:
                     return GotoWorkZero(status);
+                case AutoOpIds.ParkG28:
+                    return Park("G28", status);
+                case AutoOpIds.ParkG30:
+                    return Park("G30", status);
                 case AutoOpIds.CustomMdi:
                     return RunCustomMdi(step != null ? step.customMdi : "", status);
                 case AutoOpIds.ToolPrompt:

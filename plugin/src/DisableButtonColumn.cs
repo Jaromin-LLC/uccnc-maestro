@@ -23,6 +23,7 @@ namespace Plugins
     {
         private bool _enabled = true;
         private RunButtonMode _mode = RunButtonMode.Disabled;
+        private string _label = "RUN";
 
         public bool Enabled
         {
@@ -36,11 +37,18 @@ namespace Plugins
             set { _mode = value; }
         }
 
+        public string Label
+        {
+            get { return _label; }
+            set { _label = value; }
+        }
+
         public override object Clone()
         {
             var cell = (DataGridViewDisableButtonCell)base.Clone();
             cell.Enabled = Enabled;
             cell.Mode = Mode;
+            cell.Label = Label;
             return cell;
         }
 
@@ -57,7 +65,7 @@ namespace Plugins
                     graphics.FillRectangle(brush, buttonArea);
                 ControlPaint.DrawBorder(graphics, buttonArea, Color.FromArgb(0, 110, 0), ButtonBorderStyle.Solid);
 
-                string text = formattedValue == null ? "RUN" : formattedValue.ToString();
+                string text = string.IsNullOrEmpty(_label) ? "RUN" : _label;
                 using (var font = new Font(DataGridView.Font, FontStyle.Bold))
                 {
                     TextRenderer.DrawText(graphics, text, font, buttonArea, Color.White,
@@ -86,7 +94,7 @@ namespace Plugins
             else
                 ControlPaint.DrawButton(graphics, buttonAreaDisabled, ButtonState.Inactive);
 
-            string disabledText = formattedValue == null ? string.Empty : formattedValue.ToString();
+            string disabledText = string.IsNullOrEmpty(_label) ? string.Empty : _label;
             TextRenderer.DrawText(graphics, disabledText, DataGridView.Font, buttonAreaDisabled, SystemColors.GrayText,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
         }

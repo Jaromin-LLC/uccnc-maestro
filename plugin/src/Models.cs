@@ -14,6 +14,8 @@ namespace Plugins
         public const string SpindleOff = "spindleOff";
         public const string GotoWorkZero = "gotoWorkZero";
         public const string CustomMdi = "customMdi";
+        public const string ParkG28 = "parkG28";
+        public const string ParkG30 = "parkG30";
     }
 
     public class ToolChangePos
@@ -89,9 +91,21 @@ namespace Plugins
         public string DisplayLabel()
         {
             string label = "T" + num;
-            if (!string.IsNullOrEmpty(diameter)) label += " — " + diameter;
-            if (!string.IsNullOrEmpty(type)) label += " " + type;
-            if (!string.IsNullOrEmpty(desc)) label += " (" + desc + ")";
+            string detail = SizeDescription();
+            if (!string.IsNullOrEmpty(detail)) label += " — " + detail;
+            return label.Trim();
+        }
+
+        /// <summary>
+        /// Concatenated "diameter type (desc)" without the tool-number prefix, for use
+        /// where the tool number is shown separately.
+        /// </summary>
+        public string SizeDescription()
+        {
+            string label = "";
+            if (!string.IsNullOrEmpty(diameter)) label += diameter;
+            if (!string.IsNullOrEmpty(type)) label += (label.Length > 0 ? " " : "") + type;
+            if (!string.IsNullOrEmpty(desc)) label += (label.Length > 0 ? " " : "") + "(" + desc + ")";
             return label.Trim();
         }
 
