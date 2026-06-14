@@ -515,9 +515,10 @@ namespace Plugins
             state.done[projectId] = new List<bool>();
             for (int i = 0; i < stepCount; i++) state.done[projectId].Add(false);
 
-            if (state.lastRunSeconds == null) state.lastRunSeconds = new Dictionary<string, List<int>>();
-            state.lastRunSeconds[projectId] = new List<int>();
-            for (int i = 0; i < stepCount; i++) state.lastRunSeconds[projectId].Add(0);
+            // Run times are intentionally preserved across a reset so they persist
+            // between production runs as a reference estimate. GetLastRunSeconds
+            // null/range-guards and SetLastRunSeconds grows the list as needed, so a
+            // stale-length list left here is harmless.
         }
 
         public static int GetLastRunSeconds(ProjectRunState state, string projectId, int stepIndex)
