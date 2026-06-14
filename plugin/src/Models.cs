@@ -62,7 +62,11 @@ namespace Plugins
     public class ToolInfo
     {
         public int id { get; set; }
-        public int num { get; set; }
+
+        // Operator-facing label identifying where the tool lives in physical storage
+        // (e.g. "Drawer 3", "T7", "Rack A2"). Freeform, editable, and not required to be
+        // unique. The unique key is id; the controller tool number is driven by id.
+        public string num { get; set; }
         public string type { get; set; }
         public string diameter { get; set; }
         public string desc { get; set; }
@@ -78,7 +82,7 @@ namespace Plugins
         public ToolInfo()
         {
             id = 0;
-            num = 1;
+            num = "";
             type = "";
             diameter = "";
             desc = "";
@@ -90,10 +94,13 @@ namespace Plugins
 
         public string DisplayLabel()
         {
-            string label = "T" + num;
             string detail = SizeDescription();
-            if (!string.IsNullOrEmpty(detail)) label += " — " + detail;
-            return label.Trim();
+            if (!string.IsNullOrEmpty(num))
+            {
+                return string.IsNullOrEmpty(detail) ? num.Trim() : (num + " — " + detail).Trim();
+            }
+            if (!string.IsNullOrEmpty(detail)) return detail;
+            return ("Tool " + id).Trim();
         }
 
         /// <summary>
@@ -415,6 +422,7 @@ namespace Plugins
                     maxId++;
                     tool.id = maxId;
                 }
+                if (tool.num == null) tool.num = "";
                 if (tool.type == null) tool.type = "";
                 if (tool.diameter == null) tool.diameter = "";
                 if (tool.desc == null) tool.desc = "";
@@ -429,17 +437,6 @@ namespace Plugins
             foreach (var tool in lib.tools)
             {
                 if (tool != null && tool.id > max) max = tool.id;
-            }
-            return max + 1;
-        }
-
-        public static int NextToolNum(ToolLibraryDocument lib)
-        {
-            int max = 0;
-            if (lib == null || lib.tools == null) return 1;
-            foreach (var tool in lib.tools)
-            {
-                if (tool != null && tool.num > max) max = tool.num;
             }
             return max + 1;
         }

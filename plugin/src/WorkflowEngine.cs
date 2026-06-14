@@ -267,7 +267,7 @@ namespace Plugins
                     if (!WaitForOperatorConfirm(step, stepIndex, false)) return false;
                     var tool = GetToolForStep(step);
                     if (tool != null)
-                        ops.SetCurrentTool(tool.num, SetStatus);
+                        ops.SetCurrentTool(tool.id, SetStatus);
                     continue;
                 }
 

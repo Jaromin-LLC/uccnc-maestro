@@ -2,7 +2,7 @@
   "tools": [
     {
       "id": 1,
-      "num": 1,
+      "num": "T1",
       "type": "Flat endmill",
       "diameter": "0.25\"",
       "desc": "Example bit",

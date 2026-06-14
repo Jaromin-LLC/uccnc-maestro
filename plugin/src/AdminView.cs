@@ -30,7 +30,7 @@ namespace Plugins
         private TextBox _stepFileBox;
         private TextBox _stepInstructionsBox;
         private ComboBox _stepToolCombo;
-        private Label _libToolNumLabel;
+        private TextBox _libToolNumBox;
         private TextBox _libToolTypeBox;
         private TextBox _libToolDiaBox;
         private TextBox _libToolDescBox;
@@ -420,15 +420,12 @@ namespace Plugins
 
             var editor = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(8) };
             int y = 8;
-            editor.Controls.Add(MkLabel("Tool #", 8, y));
-            _libToolNumLabel = new Label
-            {
-                Location = new Point(120, y + 2),
-                AutoSize = true,
-                Font = new Font("Segoe UI", 9F, FontStyle.Bold)
-            };
-            _toolTips.SetToolTip(_libToolNumLabel, "Auto-assigned tool number (next available). Not editable.");
-            editor.Controls.Add(_libToolNumLabel); y += 30;
+            var libToolNumLabel = MkLabel("Storage label", 8, y);
+            _toolTips.SetToolTip(libToolNumLabel, "Freeform label identifying where this tool lives in physical storage (e.g. \"Drawer 3\", \"T7\", \"Rack A2\"). Shown to the operator; need not be unique.");
+            editor.Controls.Add(libToolNumLabel);
+            _libToolNumBox = MkText(120, y, 320);
+            _toolTips.SetToolTip(_libToolNumBox, "Freeform label identifying where this tool lives in physical storage (e.g. \"Drawer 3\", \"T7\", \"Rack A2\"). Shown to the operator; need not be unique.");
+            editor.Controls.Add(_libToolNumBox); y += 30;
             editor.Controls.Add(MkLabel("Type", 8, y));
             _libToolTypeBox = MkText(120, y, 320);
             editor.Controls.Add(_libToolTypeBox); y += 30;
@@ -930,7 +927,16 @@ namespace Plugins
             {
                 string listText = (_selectedStepIndex + 1) + ". [" + step.type + "] " + step.label;
                 if (!string.Equals(_stepList.Items[_stepList.SelectedIndex], listText))
-                    _stepList.Items[_stepList.SelectedIndex] = listText;
+                {
+                    // Reassigning a ListBox item does a native remove+re-insert,
+                    // which drops and restores the selection and re-fires
+                    // SelectedIndexChanged. That handler reloads the editor and
+                    // resets the textbox caret to 0, making fields type backwards.
+                    // Detach while updating so the live edit isn't disturbed.
+                    _stepList.SelectedIndexChanged -= StepList_SelectedIndexChanged;
+                    try { _stepList.Items[_stepList.SelectedIndex] = listText; }
+                    finally { _stepList.SelectedIndexChanged += StepList_SelectedIndexChanged; }
+                }
             }
         }
 
@@ -1103,7 +1109,6 @@ namespace Plugins
                 if (dlg.ShowDialog(_host) != DialogResult.OK || dlg.Result == null) return;
                 if (_workingTools == null) _workingTools = new ToolLibraryDocument();
                 if (_workingTools.tools == null) _workingTools.tools = new List<ToolInfo>();
-                dlg.Result.num = JsonStore.NextToolNum(_workingTools);
                 AssignToolId(dlg.Result);
                 _workingTools.tools.Add(dlg.Result);
                 RefreshToolList();
@@ -1175,7 +1180,7 @@ namespace Plugins
             _loadingEditor = true;
             try
             {
-                _libToolNumLabel.Text = "T" + _selectedLibraryTool.num;
+                _libToolNumBox.Text = _selectedLibraryTool.num ?? "";
                 _libToolTypeBox.Text = _selectedLibraryTool.type ?? "";
                 _libToolDiaBox.Text = _selectedLibraryTool.diameter ?? "";
                 _libToolDescBox.Text = _selectedLibraryTool.desc ?? "";
@@ -1193,7 +1198,7 @@ namespace Plugins
             _loadingEditor = true;
             try
             {
-                _libToolNumLabel.Text = "";
+                _libToolNumBox.Text = "";
                 _libToolTypeBox.Text = "";
                 _libToolDiaBox.Text = "";
                 _libToolDescBox.Text = "";
@@ -1209,6 +1214,7 @@ namespace Plugins
         private void CommitLibraryToolToModel()
         {
             if (_selectedLibraryTool == null) return;
+            _selectedLibraryTool.num = _libToolNumBox.Text.Trim();
             _selectedLibraryTool.type = _libToolTypeBox.Text.Trim();
             _selectedLibraryTool.diameter = _libToolDiaBox.Text.Trim();
             _selectedLibraryTool.desc = _libToolDescBox.Text.Trim();
@@ -1228,6 +1234,7 @@ namespace Plugins
 
         private void HookLibraryToolChanges()
         {
+            _libToolNumBox.TextChanged += LibraryToolChanged;
             _libToolTypeBox.TextChanged += LibraryToolChanged;
             _libToolDiaBox.TextChanged += LibraryToolChanged;
             _libToolDescBox.TextChanged += LibraryToolChanged;
@@ -1293,7 +1300,7 @@ namespace Plugins
             if (_workingTools.tools == null) _workingTools.tools = new List<ToolInfo>();
             var tool = new ToolInfo
             {
-                num = JsonStore.NextToolNum(_workingTools),
+                num = "",
                 type = "New tool",
                 diameter = "",
                 desc = ""
@@ -1315,7 +1322,6 @@ namespace Plugins
             var copy = new System.Web.Script.Serialization.JavaScriptSerializer().Deserialize<ToolInfo>(json);
             copy.id = 0;
             if (_workingTools.tools == null) _workingTools.tools = new List<ToolInfo>();
-            copy.num = JsonStore.NextToolNum(_workingTools);
             AssignToolId(copy);
             _workingTools.tools.Add(copy);
             RefreshToolList();

@@ -148,13 +148,11 @@ namespace Plugins
             _stepGrid.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI", 12F, FontStyle.Bold);
             _stepGrid.RowTemplate.Height = 46;
             _stepGrid.Columns.Add("Status", "Status");
-            _stepGrid.Columns.Add("Step", "#");
             _stepGrid.Columns.Add("Operation", "Operation");
-            _stepGrid.Columns.Add("ToolNum", "Tool #");
-            _stepGrid.Columns.Add("Tool", "Tool");
+            _stepGrid.Columns.Add("ToolNum", "Tool");
+            _stepGrid.Columns.Add("Tool", "Tool Description");
             _stepGrid.Columns.Add("Runtime", "Runtime");
             _stepGrid.Columns.Add(new DataGridViewDisableButtonColumn { Name = "Run", HeaderText = "Action", Text = "RUN", UseColumnTextForButtonValue = true, AutoSizeMode = DataGridViewAutoSizeColumnMode.None, Width = 150 });
-            _stepGrid.Columns["Step"].FillWeight = 30;
             _stepGrid.Columns["ToolNum"].FillWeight = 35;
             _stepGrid.Columns["Tool"].FillWeight = 110;
             _stepGrid.Columns["Runtime"].FillWeight = 40;
@@ -430,11 +428,11 @@ namespace Plugins
                 _stepStatuses[i] = status;
 
                 var tool = step.IsGate ? null : _engine.GetToolForStep(step);
-                string toolNum = tool != null ? tool.num.ToString() : (step.IsGate ? "-" : "");
+                string toolNum = tool != null ? (tool.num ?? "") : (step.IsGate ? "-" : "");
                 string toolText = tool != null ? tool.SizeDescription() : (step.IsGate ? "-" : "");
                 int lastRun = RunStateStore.GetLastRunSeconds(_engine.State, _currentProject.id, i);
 
-                _stepGrid.Rows.Add(StatusText(GetRowVisualState(i)), (i + 1).ToString(), step.label, toolNum, toolText, FormatRuntime(lastRun));
+                _stepGrid.Rows.Add(StatusText(GetRowVisualState(i)), step.label, toolNum, toolText, FormatRuntime(lastRun));
             }
 
             UpdateRunButtonStates();
@@ -538,7 +536,12 @@ namespace Plugins
 
                 var step = _currentProject.steps[r];
                 bool toolChange = step.IsOp && step.preOps != null && step.preOps.Contains(AutoOpIds.ToolPrompt);
-                cell.Label = toolChange ? "CHANGE TOOL" : "RUN";
+                if (step.IsGate)
+                    cell.Label = "BEGIN";
+                else if (toolChange)
+                    cell.Label = "CHANGE TOOL";
+                else
+                    cell.Label = "RUN";
 
                 RowVisualState visual = GetRowVisualState(r);
                 _stepGrid.Rows[r].Cells[statusIndex].Value = StatusText(visual);
@@ -704,7 +707,8 @@ namespace Plugins
             {
                 var tool = _engine.GetToolForStep(step) ?? new ToolInfo();
                 bool hasImage = LoadOverlayImage(tool.image) || LoadOverlayImage(step.photo);
-                _overlayBanner.Text = "CHANGE TOOL  ->  T" + tool.num;
+                string toolIdent = !string.IsNullOrEmpty(tool.num) ? tool.num : tool.SizeDescription();
+                _overlayBanner.Text = "CHANGE TOOL  ->  " + toolIdent;
                 _overlayBanner.BackColor = Color.FromArgb(214, 120, 0);
                 _confirmButton.Text = "TOOL INSTALLED";
                 if (!hasImage) SetGraphicGlyph("\U0001F527");
@@ -739,7 +743,7 @@ namespace Plugins
         {
             if (tool == null) tool = new ToolInfo();
             return step.label + "\n\n" +
-                   "Install Tool #" + tool.num + "\n" +
+                   (string.IsNullOrEmpty(tool.num) ? "" : "Storage: " + tool.num + "\n") +
                    tool.diameter + "  " + tool.type + "\n" +
                    (string.IsNullOrEmpty(tool.desc) ? "" : tool.desc + "\n") + "\n" +
                    (string.IsNullOrEmpty(step.DisplayInstructions) ? "" : step.DisplayInstructions + "\n\n") +
