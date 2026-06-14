@@ -17,6 +17,7 @@ namespace Plugins
         private readonly Label _demoBanner;
         private readonly DataGridView _stepGrid;
         private readonly Button _runAllButton;
+        private readonly Button _runFromButton;
         private readonly Button _resetButton;
         private readonly Button _abortButton;
         private readonly PictureBox _projectPhoto;
@@ -107,15 +108,19 @@ namespace Plugins
             };
 
             _runAllButton = MakeButton("RUN ALL", Color.FromArgb(0, 122, 204), 15F, 60);
+            _runFromButton = MakeButton("RUN FROM\u2026", Color.FromArgb(150, 90, 30), 13F, 52);
             _resetButton = MakeButton("RESET", Color.FromArgb(100, 100, 100), 15F, 60);
             _abortButton = MakeButton("ABORT", Color.FromArgb(180, 40, 40), 15F, 60);
-            _runAllButton.Width = _resetButton.Width = _abortButton.Width = 172;
+            _runAllButton.Width = _runFromButton.Width = _resetButton.Width = _abortButton.Width = 172;
             _runAllButton.Margin = _resetButton.Margin = _abortButton.Margin = new Padding(0, 0, 0, 12);
+            _runFromButton.Margin = new Padding(0, 0, 0, 12);
             _runAllButton.Click += RunAllButton_Click;
+            _runFromButton.Click += RunFromButton_Click;
             _resetButton.Click += ResetButton_Click;
             _abortButton.Click += AbortButton_Click;
 
             buttonPanel.Controls.Add(_runAllButton);
+            buttonPanel.Controls.Add(_runFromButton);
             buttonPanel.Controls.Add(_resetButton);
             buttonPanel.Controls.Add(_abortButton);
 
@@ -650,6 +655,98 @@ namespace Plugins
             _engine.RunAll(_currentProject, start);
         }
 
+        // Operator override: start a full run at an arbitrary step. This is the recovery
+        // path for when the saved completion state no longer matches the machine (e.g. a
+        // step ran on the controller but Maestro recorded it as stopped). The step picker
+        // is a modal dialog so the grid stays untouched; the per-step RUN buttons still
+        // only enable the next expected step.
+        private void RunFromButton_Click(object sender, EventArgs e)
+        {
+            if (_currentProject == null || _engine.IsRunning) return;
+            if (_currentProject.steps == null || _currentProject.steps.Count == 0) return;
+
+            int idx;
+            if (!PromptForStartStep(out idx)) return;
+            if (idx < 0 || idx >= _currentProject.steps.Count) return;
+
+            _engine.RunAll(_currentProject, idx, true);
+        }
+
+        // Modal step picker for the RUN FROM override. Returns true (with the chosen
+        // zero-based step index) only when the operator confirms.
+        private bool PromptForStartStep(out int selectedIndex)
+        {
+            selectedIndex = -1;
+
+            using (var dialog = new Form())
+            {
+                dialog.Text = "Run From Step (Override)";
+                dialog.FormBorderStyle = FormBorderStyle.FixedDialog;
+                dialog.StartPosition = FormStartPosition.CenterParent;
+                dialog.MinimizeBox = false;
+                dialog.MaximizeBox = false;
+                dialog.ShowInTaskbar = false;
+                dialog.ClientSize = new Size(560, 320);
+                dialog.Font = new Font("Segoe UI", 12F);
+
+                var info = new Label
+                {
+                    Dock = DockStyle.Top,
+                    Height = 132,
+                    Padding = new Padding(16, 16, 16, 8),
+                    Text =
+                        "Choose the step to start a full run from.\r\n\r\n" +
+                        "OVERRIDE: this ignores the normal step order. Earlier steps are left " +
+                        "as-is and will NOT run.\r\n\r\n" +
+                        "Make sure the machine is set up for the chosen step (correct tool " +
+                        "installed and zeroed) before continuing."
+                };
+
+                var combo = new ComboBox
+                {
+                    DropDownStyle = ComboBoxStyle.DropDownList,
+                    Font = new Font("Segoe UI", 14F),
+                    Location = new Point(16, 150),
+                    Width = dialog.ClientSize.Width - 32,
+                    Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+                };
+
+                int firstNotDone = RunStateStore.FirstNotDone(_engine.State, _currentProject.id, _currentProject.steps.Count);
+                for (int i = 0; i < _currentProject.steps.Count; i++)
+                {
+                    var step = _currentProject.steps[i];
+                    bool done = RunStateStore.IsDone(_engine.State, _currentProject.id, i);
+                    string suffix = done ? "  [done]" : (i == firstNotDone ? "  [next]" : "");
+                    combo.Items.Add((i + 1) + ".  " + step.label + suffix);
+                }
+                combo.SelectedIndex = firstNotDone >= 0 ? firstNotDone : 0;
+
+                var runButton = MakeButton("RUN FROM HERE", Color.FromArgb(150, 90, 30), 14F, 56);
+                runButton.Size = new Size(220, 56);
+                runButton.Location = new Point(dialog.ClientSize.Width - 236, dialog.ClientSize.Height - 72);
+                runButton.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+                runButton.DialogResult = DialogResult.OK;
+
+                var cancelButton = MakeButton("CANCEL", Color.FromArgb(120, 120, 120), 14F, 56);
+                cancelButton.Size = new Size(140, 56);
+                cancelButton.Location = new Point(16, dialog.ClientSize.Height - 72);
+                cancelButton.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
+                cancelButton.DialogResult = DialogResult.Cancel;
+
+                dialog.Controls.Add(combo);
+                dialog.Controls.Add(info);
+                dialog.Controls.Add(runButton);
+                dialog.Controls.Add(cancelButton);
+                dialog.AcceptButton = runButton;
+                dialog.CancelButton = cancelButton;
+
+                if (dialog.ShowDialog(_host) != DialogResult.OK) return false;
+
+                selectedIndex = combo.SelectedIndex;
+                return selectedIndex >= 0;
+            }
+        }
+
         private void ResetButton_Click(object sender, EventArgs e)
         {
             if (_currentProject == null || _engine.IsRunning) return;
@@ -682,6 +779,7 @@ namespace Plugins
         private void Engine_RunningChanged(bool running)
         {
             _runAllButton.Enabled = !running;
+            _runFromButton.Enabled = !running;
             _resetButton.Enabled = !running;
             _abortButton.Enabled = running;
             _projectCombo.Enabled = !running;

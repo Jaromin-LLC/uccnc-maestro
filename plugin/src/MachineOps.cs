@@ -488,8 +488,15 @@ namespace Plugins
             return true;
         }
 
+        // Cycle Start can legitimately take several seconds to register after a file
+        // load - more so on this machine, where AXBB-E link stalls can briefly freeze
+        // the controller. A short fixed timeout produced false "did not trigger" errors
+        // on runs that actually started and completed, so the window is generous and the
+        // real signal comes from the latching start/finish events below.
+        private const int CycleStartTimeoutMs = 20000;
+
         public bool LoadAndRunFile(string fullPath, Action<string> status, Func<bool> isAborted, Action waitForCycleFinish,
-            Action resetCycleFinished, Func<bool> cycleFinished)
+            Action resetCycleSignals, Func<bool> cycleStarted, Func<bool> cycleFinished)
         {
             if (!System.IO.File.Exists(fullPath))
             {
@@ -530,31 +537,54 @@ namespace Plugins
             _uc.Callbutton(127);
             _uc.Wait(150);
 
-            if (resetCycleFinished != null) resetCycleFinished();
+            // Clear any latched start/finish state from prior moves so the signals we
+            // read below belong to this cycle only.
+            if (resetCycleSignals != null) resetCycleSignals();
 
             if (status != null) status("Cycle start...");
             _uc.Callbutton(128);
 
+            // Confirm the cycle actually began. The start/finish events latch (set by
+            // UCCNC's Cyclethreadstart/finish callbacks), so neither a very short program
+            // that completes before we sample, nor a controller that is slow to spool up,
+            // is mistaken for a failed start.
             int waited = 0;
-            while (!_uc.GetLED(54))
+            bool started = false;
+            while (true)
             {
                 if (isAborted != null && isAborted()) return false;
+
+                // Short cycle that already ran to completion between samples.
                 if (cycleFinished != null && cycleFinished())
                 {
                     if (status != null) status("Run finished.");
                     return true;
                 }
+
+                // Cycle confirmed running - hand off to the finish wait below.
+                if ((cycleStarted != null && cycleStarted()) || _uc.GetLED(54))
+                {
+                    started = true;
+                    break;
+                }
+
                 _uc.Wait(50);
                 waited += 50;
-                if (waited >= 5000)
-                {
-                    ShowMessage(
-                        "Cycle Start did not trigger after loading:\n" + System.IO.Path.GetFileName(fullPath) +
-                        "\n\nMake sure the machine is reset (the Reset button is green / not flashing) and try again.",
-                        "Run Error", MessageBoxIcon.Warning);
-                    if (status != null) status("Aborted - cycle start did not trigger.");
-                    return false;
-                }
+                if (waited >= CycleStartTimeoutMs) break;
+            }
+
+            if (!started)
+            {
+                // The generous window elapsed with no start/finish signal and the cycle
+                // LED never came on: the Cycle Start press did not take. Stop the
+                // controller so a delayed start can't run unattended, then surface the error.
+                try { _uc.Stop(); } catch { }
+                ShowMessage(
+                    "Cycle Start did not trigger after loading:\n" + System.IO.Path.GetFileName(fullPath) +
+                    "\n\nMake sure the machine is reset (the Reset button is green / not flashing) and try again.",
+                    "Run Error", MessageBoxIcon.Warning);
+                if (status != null) status("Aborted - cycle start did not trigger.");
+                return false;
             }
 
             if (status != null) status("Running " + System.IO.Path.GetFileName(fullPath));

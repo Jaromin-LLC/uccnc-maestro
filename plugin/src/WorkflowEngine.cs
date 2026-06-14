@@ -20,6 +20,7 @@ namespace Plugins
         private Thread _runThread;
         private volatile bool _abortRequested;
         private volatile bool _operatorConfirmed;
+        private ManualResetEvent _cycleStartedEvent = new ManualResetEvent(false);
         private ManualResetEvent _cycleFinishedEvent = new ManualResetEvent(false);
         private ManualResetEvent _confirmEvent = new ManualResetEvent(false);
 
@@ -103,6 +104,11 @@ namespace Plugins
             JsonStore.SaveState(MaestroPaths.StateFile, _state);
         }
 
+        public void NotifyCycleStarted()
+        {
+            _cycleStartedEvent.Set();
+        }
+
         public void NotifyCycleFinished()
         {
             _cycleFinishedEvent.Set();
@@ -136,10 +142,20 @@ namespace Plugins
 
         public void RunAll(WorkflowProject project, int startIndex)
         {
+            RunAll(project, startIndex, false);
+        }
+
+        // allowOutOfOrder lets the operator override the normal sequence and start a
+        // full run at any step (recovery when the saved state is out of sync with the
+        // machine). Normal RUN ALL passes false so the out-of-order guard stays active.
+        public void RunAll(WorkflowProject project, int startIndex, bool allowOutOfOrder)
+        {
             if (_running) return;
             if (project == null || project.steps == null || project.steps.Count == 0) return;
             int end = project.steps.Count - 1;
-            StartThread(() => RunSteps(project, startIndex, end, false));
+            if (startIndex < 0) startIndex = 0;
+            if (startIndex > end) return;
+            StartThread(() => RunSteps(project, startIndex, end, allowOutOfOrder));
         }
 
         public void ResetProject(WorkflowProject project)
@@ -277,9 +293,10 @@ namespace Plugins
 
             string fullPath = (step.file ?? "").Trim();
 
-            _cycleFinishedEvent.Reset();
             if (!ops.LoadAndRunFile(fullPath, SetStatus, () => _abortRequested, WaitForCycleFinish,
-                    () => _cycleFinishedEvent.Reset(), () => _cycleFinishedEvent.WaitOne(0)))
+                    () => { _cycleStartedEvent.Reset(); _cycleFinishedEvent.Reset(); },
+                    () => _cycleStartedEvent.WaitOne(0),
+                    () => _cycleFinishedEvent.WaitOne(0)))
                 return false;
 
             if (_abortRequested) return false;

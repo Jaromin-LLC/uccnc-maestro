@@ -118,6 +118,8 @@ namespace Plugins
 
         public void Cyclethreadstart_event()
         {
+            if (Engine != null)
+                Engine.NotifyCycleStarted();
         }
 
         public void Cyclethreadfinish_event()
