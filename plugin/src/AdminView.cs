@@ -64,7 +64,30 @@ namespace Plugins
         private WorkflowProject _selectedProject;
         private int _selectedStepIndex = -1;
         private ToolInfo _selectedLibraryTool;
-        private bool _loadingEditor;
+        private int _loadDepth;
+        // True while the editor is being populated from the model, so user-driven
+        // change events (TextChanged, ItemCheck, etc.) are ignored. Backed by a depth
+        // counter so it is re-entrant: a nested load (e.g. RefreshStepToolCombo called
+        // inside ApplyStepFields) can't clear a parent's guard early.
+        private bool _loadingEditor { get { return _loadDepth > 0; } }
+
+        private IDisposable BeginLoad()
+        {
+            _loadDepth++;
+            return new LoadScope(this);
+        }
+
+        private sealed class LoadScope : IDisposable
+        {
+            private AdminView _view;
+            public LoadScope(AdminView view) { _view = view; }
+            public void Dispose()
+            {
+                if (_view == null) return;
+                if (_view._loadDepth > 0) _view._loadDepth--;
+                _view = null;
+            }
+        }
 
         private static readonly string[] AutoOpLabels =
         {
@@ -524,16 +547,38 @@ namespace Plugins
             _stepInstructionsBox.TextChanged += EditorChanged;
             _photoBox.TextChanged += EditorChanged;
             _videoBox.TextChanged += EditorChanged;
-            _preOpsList.ItemCheck += (s, e) =>
+            _preOpsList.ItemCheck += (s, e) => OnOpsItemCheck(_preOpsList, e, true);
+            _postOpsList.ItemCheck += (s, e) => OnOpsItemCheck(_postOpsList, e, false);
+        }
+
+        // Applies a pre/post-op checkbox change immediately to the currently selected
+        // step. ItemCheck fires BEFORE the control's checked state is updated, so the
+        // changed item's value is read from e.NewValue rather than GetItemChecked - this
+        // avoids the old deferred BeginInvoke, whose write could land on a different step
+        // if the selection changed before it ran.
+        private void OnOpsItemCheck(CheckedListBox list, ItemCheckEventArgs e, bool isPreOps)
+        {
+            if (_loadingEditor) return;
+            if (_selectedProject == null || _selectedStepIndex < 0 ||
+                _selectedStepIndex >= _selectedProject.steps.Count)
+                return;
+
+            var ops = BuildOpsList(list, e.Index, e.NewValue == CheckState.Checked);
+            var step = _selectedProject.steps[_selectedStepIndex];
+            if (isPreOps) step.preOps = ops;
+            else step.postOps = ops;
+            MarkDirty();
+        }
+
+        private static List<string> BuildOpsList(CheckedListBox list, int changedIndex, bool changedValue)
+        {
+            var result = new List<string>();
+            for (int i = 0; i < list.Items.Count; i++)
             {
-                if (_loadingEditor) return;
-                BeginInvoke(new MethodInvoker(() => { if (!_loadingEditor) { ApplyEditorToStep(); MarkDirty(); } }));
-            };
-            _postOpsList.ItemCheck += (s, e) =>
-            {
-                if (_loadingEditor) return;
-                BeginInvoke(new MethodInvoker(() => { if (!_loadingEditor) { ApplyEditorToStep(); MarkDirty(); } }));
-            };
+                bool isChecked = (i == changedIndex) ? changedValue : list.GetItemChecked(i);
+                if (isChecked) result.Add(AutoOpLabels[i].Split('|')[0].Trim());
+            }
+            return result;
         }
 
         private void OverrideMachineBox_CheckedChanged(object sender, EventArgs e)
@@ -568,12 +613,10 @@ namespace Plugins
             _selectedProject.toolChangePos = new System.Web.Script.Serialization.JavaScriptSerializer().Deserialize<ToolChangePos>(json);
             _selectedProject.useSafeZForTc = s.useSafeZForTc;
 
-            _loadingEditor = true;
-            try
+            using (BeginLoad())
             {
                 _projectOverrideFields.LoadFrom(_selectedProject.probe, _selectedProject.toolChangePos, _selectedProject.useSafeZForTc);
             }
-            finally { _loadingEditor = false; }
         }
 
         private void UpdateMachineSettingsVisibility()
@@ -617,13 +660,11 @@ namespace Plugins
             if (_selectedProject.probe == null) _selectedProject.probe = new ProbeSettings();
             if (_selectedProject.toolChangePos == null) _selectedProject.toolChangePos = new ToolChangePos();
 
-            _loadingEditor = true;
-            try
+            using (BeginLoad())
             {
                 _overrideMachineBox.Checked = _selectedProject.overrideMachineSettings;
                 _projectOverrideFields.LoadFrom(_selectedProject.probe, _selectedProject.toolChangePos, _selectedProject.useSafeZForTc);
             }
-            finally { _loadingEditor = false; }
 
             UpdateMachineSettingsVisibility();
         }
@@ -750,8 +791,7 @@ namespace Plugins
         private void ApplyProjectFields()
         {
             if (_selectedProject == null) return;
-            _loadingEditor = true;
-            try
+            using (BeginLoad())
             {
                 _projectIdBox.Text = _selectedProject.id ?? "";
                 _projectNameBox.Text = _selectedProject.name ?? "";
@@ -759,17 +799,12 @@ namespace Plugins
                 _projectImageBox.Text = _selectedProject.image ?? "";
                 LoadImagePreview(_projectImagePreview, _selectedProject.image);
             }
-            finally
-            {
-                _loadingEditor = false;
-            }
             LoadProjectMachineFields();
         }
 
         private void ClearProjectFields()
         {
-            _loadingEditor = true;
-            try
+            using (BeginLoad())
             {
                 _projectIdBox.Text = "";
                 _projectNameBox.Text = "";
@@ -787,10 +822,6 @@ namespace Plugins
                 _overrideMachineBox.Checked = false;
                 UpdateMachineSettingsVisibility();
             }
-            finally
-            {
-                _loadingEditor = false;
-            }
         }
 
         private void ApplyStepFields()
@@ -807,8 +838,7 @@ namespace Plugins
             if (step.preOps == null) step.preOps = new List<string>();
             if (step.postOps == null) step.postOps = new List<string>();
 
-            _loadingEditor = true;
-            try
+            using (BeginLoad())
             {
                 _stepLabelBox.Text = step.label ?? "";
                 _stepTypeCombo.SelectedItem = step.IsGate ? "gate" : "op";
@@ -823,16 +853,11 @@ namespace Plugins
                 SetCheckedOps(_postOpsList, step.postOps);
                 LoadPhotoPreview(step.photo);
             }
-            finally
-            {
-                _loadingEditor = false;
-            }
         }
 
         private void ClearStepFields()
         {
-            _loadingEditor = true;
-            try
+            using (BeginLoad())
             {
                 _stepLabelBox.Text = "";
                 _stepTypeCombo.SelectedIndex = 0;
@@ -845,17 +870,12 @@ namespace Plugins
                 ClearCheckedOps(_preOpsList);
                 ClearCheckedOps(_postOpsList);
             }
-            finally
-            {
-                _loadingEditor = false;
-            }
         }
 
         private void LoadSettingsFields()
         {
             if (_workingDoc == null || _workingDoc.settings == null) return;
-            _loadingEditor = true;
-            try
+            using (BeginLoad())
             {
                 var s = _workingDoc.settings;
                 if (s.probe == null) s.probe = new ProbeSettings();
@@ -864,10 +884,6 @@ namespace Plugins
                 _mediaRootBox.Text = s.mediaRoot ?? "";
                 _testModeBox.Checked = s.testMode;
                 _globalMachineFields.LoadFrom(s.probe, s.toolChangePos, s.useSafeZForTc);
-            }
-            finally
-            {
-                _loadingEditor = false;
             }
             UpdateMachineSettingsVisibility();
         }
@@ -1060,8 +1076,7 @@ namespace Plugins
 
         private void RefreshStepToolCombo(int selectedToolId)
         {
-            _loadingEditor = true;
-            try
+            using (BeginLoad())
             {
                 _stepToolCombo.Items.Clear();
                 _stepToolCombo.Items.Add(new ToolComboEntry { ToolId = 0, Label = "(no tool)" });
@@ -1086,7 +1101,6 @@ namespace Plugins
                 }
                 _stepToolCombo.SelectedIndex = _stepToolCombo.Items.Count > 0 ? idx : -1;
             }
-            finally { _loadingEditor = false; }
         }
 
         private int GetSelectedStepToolId()
@@ -1177,8 +1191,7 @@ namespace Plugins
                 return;
             }
 
-            _loadingEditor = true;
-            try
+            using (BeginLoad())
             {
                 _libToolNumBox.Text = _selectedLibraryTool.num ?? "";
                 _libToolTypeBox.Text = _selectedLibraryTool.type ?? "";
@@ -1190,13 +1203,11 @@ namespace Plugins
                 _libToolEdgeProbeCheck.Checked = _selectedLibraryTool.edgeProbePrompt;
                 LoadImagePreview(_libToolImagePreview, _selectedLibraryTool.image);
             }
-            finally { _loadingEditor = false; }
         }
 
         private void ClearLibraryToolFields()
         {
-            _loadingEditor = true;
-            try
+            using (BeginLoad())
             {
                 _libToolNumBox.Text = "";
                 _libToolTypeBox.Text = "";
@@ -1208,7 +1219,6 @@ namespace Plugins
                 _libToolEdgeProbeCheck.Checked = false;
                 if (_libToolImagePreview.Image != null) { var old = _libToolImagePreview.Image; _libToolImagePreview.Image = null; old.Dispose(); }
             }
-            finally { _loadingEditor = false; }
         }
 
         private void CommitLibraryToolToModel()
@@ -1250,13 +1260,11 @@ namespace Plugins
             int idx = _toolList.SelectedIndex;
             if (idx >= 0 && idx < _toolList.Items.Count)
             {
-                _loadingEditor = true;
-                try
+                using (BeginLoad())
                 {
                     _toolList.Items[idx] = _selectedLibraryTool;
                     _toolList.SelectedIndex = idx;
                 }
-                finally { _loadingEditor = false; }
             }
             RefreshStepToolComboPreserving();
             MarkDirty();
