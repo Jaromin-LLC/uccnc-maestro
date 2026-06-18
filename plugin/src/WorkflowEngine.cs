@@ -259,7 +259,7 @@ namespace Plugins
         {
             _activeStepIndex = stepIndex;
             WorkflowStep step = project.steps[stepIndex];
-            step.EnsureDefaultOps();
+            step.EnsureOpsNotNull();
             var stepTimer = Stopwatch.StartNew();
 
             RaiseStepStatus(stepIndex, StepRunStatus.Running);

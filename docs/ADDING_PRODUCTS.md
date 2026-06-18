@@ -102,6 +102,12 @@ Each operation step can configure **Pre Ops** and **Post Ops**:
 
 | `gotoWorkZero` | G0 X0 Y0 |
 
+| `parkG28` | Rapid to UCCNC G28 (homed machine origin; not adjustable in-plugin) |
+
+| `parkG30` | Rapid to UCCNC G30 (second predefined position) |
+
+| `parkCustom` | Rapid to the adjustable **Park X/Y/Z** machine coordinates (safe Z first) |
+
 | `customMdi` | Run custom MDI from step (future field) |
 
 

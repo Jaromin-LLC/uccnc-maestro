@@ -157,6 +157,7 @@ namespace Plugins
             _stepGrid.Columns.Add("ToolNum", "Tool");
             _stepGrid.Columns.Add("Tool", "Tool Description");
             _stepGrid.Columns.Add("Runtime", "Runtime");
+            _stepGrid.Columns.Add(new DataGridViewButtonColumn { Name = "Video", HeaderText = "Video", UseColumnTextForButtonValue = false, FlatStyle = FlatStyle.Standard, AutoSizeMode = DataGridViewAutoSizeColumnMode.None, Width = 110 });
             _stepGrid.Columns.Add(new DataGridViewDisableButtonColumn { Name = "Run", HeaderText = "Action", Text = "RUN", UseColumnTextForButtonValue = true, AutoSizeMode = DataGridViewAutoSizeColumnMode.None, Width = 150 });
             _stepGrid.Columns["ToolNum"].FillWeight = 35;
             _stepGrid.Columns["Tool"].FillWeight = 110;
@@ -437,7 +438,14 @@ namespace Plugins
                 string toolText = tool != null ? tool.SizeDescription() : (step.IsGate ? "-" : "");
                 int lastRun = RunStateStore.GetLastRunSeconds(_engine.State, _currentProject.id, i);
 
-                _stepGrid.Rows.Add(StatusText(GetRowVisualState(i)), step.label, toolNum, toolText, FormatRuntime(lastRun));
+                int row = _stepGrid.Rows.Add(StatusText(GetRowVisualState(i)), step.label, toolNum, toolText, FormatRuntime(lastRun));
+
+                // Only rows with a video get a clickable button; others become a blank
+                // text cell so no empty button is drawn.
+                if (!string.IsNullOrEmpty(step.video))
+                    _stepGrid.Rows[row].Cells["Video"].Value = "\u25B6 VIDEO";
+                else
+                    _stepGrid.Rows[row].Cells["Video"] = new DataGridViewTextBoxCell { Value = "" };
             }
 
             UpdateRunButtonStates();
@@ -640,8 +648,17 @@ namespace Plugins
 
         private void StepGrid_CellContentClick(object sender, DataGridViewCellEventArgs e)
         {
-            if (e.RowIndex < 0 || e.ColumnIndex != _stepGrid.Columns["Run"].Index) return;
-            if (_engine.IsRunning || _currentProject == null) return;
+            if (e.RowIndex < 0 || _currentProject == null) return;
+
+            if (e.ColumnIndex == _stepGrid.Columns["Video"].Index)
+            {
+                if (e.RowIndex < _currentProject.steps.Count)
+                    PlayStepVideo(_currentProject.steps[e.RowIndex]);
+                return;
+            }
+
+            if (e.ColumnIndex != _stepGrid.Columns["Run"].Index) return;
+            if (_engine.IsRunning) return;
             var cell = _stepGrid.Rows[e.RowIndex].Cells[e.ColumnIndex] as DataGridViewDisableButtonCell;
             if (cell == null || !cell.Enabled) return;
             _engine.RunStep(_currentProject, e.RowIndex, false);
@@ -859,8 +876,15 @@ namespace Plugins
 
         private void PlayVideoButton_Click(object sender, EventArgs e)
         {
-            if (_promptStep == null || string.IsNullOrEmpty(_promptStep.video)) return;
-            string path = ResolveMediaPath(_promptStep.video);
+            PlayStepVideo(_promptStep);
+        }
+
+        // Opens the step's video in the OS default player. Shared by the prompt overlay
+        // button and the on-demand "VIDEO" button in the step grid.
+        private void PlayStepVideo(WorkflowStep step)
+        {
+            if (step == null || string.IsNullOrEmpty(step.video)) return;
+            string path = ResolveMediaPath(step.video);
             if (!File.Exists(path))
             {
                 MessageBox.Show(_host, "Video not found:\n" + path, "Video", MessageBoxButtons.OK, MessageBoxIcon.Warning);

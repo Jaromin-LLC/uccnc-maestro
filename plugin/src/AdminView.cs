@@ -102,6 +102,7 @@ namespace Plugins
             AutoOpIds.GotoWorkZero + " | Go to work zero",
             AutoOpIds.ParkG28 + " | Park (G28)",
             AutoOpIds.ParkG30 + " | Park (G30)",
+            AutoOpIds.ParkCustom + " | Park (custom position)",
             AutoOpIds.CustomMdi + " | Custom MDI"
         };
 
@@ -381,6 +382,10 @@ namespace Plugins
             var browseVideoBtn = new Button { Text = "Pick Video...", Location = new Point(454, sy - 2), Width = 90 };
             browseVideoBtn.Click += BrowseVideoBtn_Click;
             stepGroup.Controls.Add(browseVideoBtn);
+            var playVideoBtn = new Button { Text = "Play", Location = new Point(550, sy - 2), Width = 60 };
+            playVideoBtn.Click += PlayVideoBtn_Click;
+            _toolTips.SetToolTip(playVideoBtn, "Open the selected video in your default player to verify it.");
+            stepGroup.Controls.Add(playVideoBtn);
             sy += 34;
 
             stepGroup.Controls.Add(MkLabel("Pre Ops", 12, sy));
@@ -605,18 +610,22 @@ namespace Plugins
             var s = _workingDoc.settings;
             if (s.probe == null) s.probe = new ProbeSettings();
             if (s.toolChangePos == null) s.toolChangePos = new ToolChangePos();
+            if (s.parkPos == null) s.parkPos = new ParkPos();
             if (_selectedProject.probe == null) _selectedProject.probe = new ProbeSettings();
             if (_selectedProject.toolChangePos == null) _selectedProject.toolChangePos = new ToolChangePos();
+            if (_selectedProject.parkPos == null) _selectedProject.parkPos = new ParkPos();
 
             string json = new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(s.probe);
             _selectedProject.probe = new System.Web.Script.Serialization.JavaScriptSerializer().Deserialize<ProbeSettings>(json);
             json = new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(s.toolChangePos);
             _selectedProject.toolChangePos = new System.Web.Script.Serialization.JavaScriptSerializer().Deserialize<ToolChangePos>(json);
+            json = new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(s.parkPos);
+            _selectedProject.parkPos = new System.Web.Script.Serialization.JavaScriptSerializer().Deserialize<ParkPos>(json);
             _selectedProject.useSafeZForTc = s.useSafeZForTc;
 
             using (BeginLoad())
             {
-                _projectOverrideFields.LoadFrom(_selectedProject.probe, _selectedProject.toolChangePos, _selectedProject.useSafeZForTc);
+                _projectOverrideFields.LoadFrom(_selectedProject.probe, _selectedProject.toolChangePos, _selectedProject.parkPos, _selectedProject.useSafeZForTc);
             }
         }
 
@@ -643,9 +652,10 @@ namespace Plugins
             _selectedProject.overrideMachineSettings = _overrideMachineBox.Checked;
             if (_selectedProject.probe == null) _selectedProject.probe = new ProbeSettings();
             if (_selectedProject.toolChangePos == null) _selectedProject.toolChangePos = new ToolChangePos();
+            if (_selectedProject.parkPos == null) _selectedProject.parkPos = new ParkPos();
             bool useSafeZ = _selectedProject.useSafeZForTc;
             if (_overrideMachineBox.Checked)
-                _projectOverrideFields.SaveTo(_selectedProject.probe, _selectedProject.toolChangePos, ref useSafeZ);
+                _projectOverrideFields.SaveTo(_selectedProject.probe, _selectedProject.toolChangePos, _selectedProject.parkPos, ref useSafeZ);
             _selectedProject.useSafeZForTc = useSafeZ;
         }
 
@@ -660,11 +670,12 @@ namespace Plugins
 
             if (_selectedProject.probe == null) _selectedProject.probe = new ProbeSettings();
             if (_selectedProject.toolChangePos == null) _selectedProject.toolChangePos = new ToolChangePos();
+            if (_selectedProject.parkPos == null) _selectedProject.parkPos = new ParkPos();
 
             using (BeginLoad())
             {
                 _overrideMachineBox.Checked = _selectedProject.overrideMachineSettings;
-                _projectOverrideFields.LoadFrom(_selectedProject.probe, _selectedProject.toolChangePos, _selectedProject.useSafeZForTc);
+                _projectOverrideFields.LoadFrom(_selectedProject.probe, _selectedProject.toolChangePos, _selectedProject.parkPos, _selectedProject.useSafeZForTc);
             }
 
             UpdateMachineSettingsVisibility();
@@ -886,10 +897,11 @@ namespace Plugins
                 var s = _workingDoc.settings;
                 if (s.probe == null) s.probe = new ProbeSettings();
                 if (s.toolChangePos == null) s.toolChangePos = new ToolChangePos();
+                if (s.parkPos == null) s.parkPos = new ParkPos();
 
                 _mediaRootBox.Text = s.mediaRoot ?? "";
                 _testModeBox.Checked = s.testMode;
-                _globalMachineFields.LoadFrom(s.probe, s.toolChangePos, s.useSafeZForTc);
+                _globalMachineFields.LoadFrom(s.probe, s.toolChangePos, s.parkPos, s.useSafeZForTc);
             }
             UpdateMachineSettingsVisibility();
         }
@@ -910,12 +922,13 @@ namespace Plugins
             var s = _workingDoc.settings;
             if (s.probe == null) s.probe = new ProbeSettings();
             if (s.toolChangePos == null) s.toolChangePos = new ToolChangePos();
+            if (s.parkPos == null) s.parkPos = new ParkPos();
 
             s.mediaRoot = _mediaRootBox.Text.Trim();
             s.testMode = _testModeBox.Checked;
 
             bool useSafeZ = s.useSafeZForTc;
-            _globalMachineFields.SaveTo(s.probe, s.toolChangePos, ref useSafeZ);
+            _globalMachineFields.SaveTo(s.probe, s.toolChangePos, s.parkPos, ref useSafeZ);
             s.useSafeZForTc = useSafeZ;
         }
 
@@ -1407,6 +1420,32 @@ namespace Plugins
         private void BrowseVideoBtn_Click(object sender, EventArgs e)
         {
             CopyMediaFile(_videoBox, new[] { "mp4", "avi", "wmv", "mov", "mkv" });
+        }
+
+        private void PlayVideoBtn_Click(object sender, EventArgs e)
+        {
+            string rel = _videoBox.Text.Trim();
+            if (string.IsNullOrEmpty(rel))
+            {
+                MessageBox.Show(_host, "No video set for this step.", "Video",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            string path = Path.IsPathRooted(rel) ? rel : Path.Combine(GetMediaRoot(), rel);
+            if (!File.Exists(path))
+            {
+                MessageBox.Show(_host, "Video not found:\n" + path, "Video",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            try { System.Diagnostics.Process.Start(path); }
+            catch (Exception ex)
+            {
+                MessageBox.Show(_host, "Could not open video:\n" + ex.Message, "Video",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private void PickImageInto(TextBox backing, PictureBox preview)

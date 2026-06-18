@@ -90,6 +90,11 @@ namespace Plugins
             get { return _settings.toolChangePos ?? new ToolChangePos(); }
         }
 
+        private ParkPos Pk
+        {
+            get { return _settings.parkPos ?? new ParkPos(); }
+        }
+
         private bool TcSafeZEnabled()
         {
             return _settings.useSafeZForTc;
@@ -260,6 +265,55 @@ namespace Plugins
             WaitForIdle();
 
             if (status != null) status("Parked (" + parkCode + ").");
+            return true;
+        }
+
+        /// <summary>
+        /// Moves to the user-configured park position using absolute machine (G53)
+        /// rapids, so the destination is adjustable and behaves identically on any
+        /// machine (unlike G28/G30, which UCCNC ties to the homed origin). Retracts to
+        /// Safe Z first (when enabled) before traveling in XY.
+        /// </summary>
+        public bool ParkCustom(Action<string> status)
+        {
+            if (TestMode)
+            {
+                if (status != null) status("TEST MODE - park (custom) skipped.");
+                return true;
+            }
+
+            bool tcSafeZ = TcSafeZEnabled();
+            double safeZ = GetSafeZ();
+            double px = Pk.x;
+            double py = Pk.y;
+            double pz = Pk.z;
+
+            if (status != null) status("Moving to park position...");
+
+            _uc.Codesync("G90");
+            WaitForIdle();
+
+            if (tcSafeZ)
+            {
+                _uc.Codesync("G53 G0 Z" + Dbl2Str(safeZ));
+                WaitForIdle();
+            }
+            else
+            {
+                _uc.Codesync("G53 G0 Z" + Dbl2Str(pz));
+                WaitForIdle();
+            }
+
+            _uc.Codesync("G53 G0 X" + Dbl2Str(px) + " Y" + Dbl2Str(py));
+            WaitForIdle();
+
+            if (tcSafeZ)
+            {
+                _uc.Codesync("G53 G0 Z" + Dbl2Str(pz));
+                WaitForIdle();
+            }
+
+            if (status != null) status("Parked (custom position).");
             return true;
         }
 
@@ -623,6 +677,8 @@ namespace Plugins
                     return Park("G28", status);
                 case AutoOpIds.ParkG30:
                     return Park("G30", status);
+                case AutoOpIds.ParkCustom:
+                    return ParkCustom(status);
                 case AutoOpIds.CustomMdi:
                     return RunCustomMdi(step != null ? step.customMdi : "", status);
                 case AutoOpIds.ToolPrompt:

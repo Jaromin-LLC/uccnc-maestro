@@ -16,6 +16,7 @@ namespace Plugins
         public const string CustomMdi = "customMdi";
         public const string ParkG28 = "parkG28";
         public const string ParkG30 = "parkG30";
+        public const string ParkCustom = "parkCustom";
     }
 
     public class ToolChangePos
@@ -24,6 +25,18 @@ namespace Plugins
         public double y { get; set; }
         public double z { get; set; }
         public double zSafe { get; set; }
+    }
+
+    /// <summary>
+    /// User-defined park location in absolute machine (G53) coordinates. Unlike G28/G30
+    /// (which UCCNC ties to the homed machine origin), this is freely adjustable and the
+    /// "Park (custom position)" auto-op moves here via a G53 rapid.
+    /// </summary>
+    public class ParkPos
+    {
+        public double x { get; set; }
+        public double y { get; set; }
+        public double z { get; set; }
     }
 
     public class ProbeSettings
@@ -44,6 +57,7 @@ namespace Plugins
     {
         public string mediaRoot { get; set; }
         public ToolChangePos toolChangePos { get; set; }
+        public ParkPos parkPos { get; set; }
         public ProbeSettings probe { get; set; }
         public bool testMode { get; set; }
 
@@ -54,6 +68,7 @@ namespace Plugins
         {
             mediaRoot = @"C:\UCCNC\Maestro\Media";
             toolChangePos = new ToolChangePos();
+            parkPos = new ParkPos();
             probe = new ProbeSettings();
             useSafeZForTc = true;
         }
@@ -160,6 +175,12 @@ namespace Plugins
             preOps = new List<string>();
             postOps = new List<string>();
             customMdi = "";
+
+            // Seed sensible defaults for a brand-new op step. This runs only at
+            // construction; on JSON load the deserializer overwrites preOps/postOps
+            // with the saved arrays (including an intentionally-empty []), so a user
+            // who clears all ops keeps them cleared.
+            SeedDefaultOps();
         }
 
         public bool IsGate
@@ -181,9 +202,14 @@ namespace Plugins
             }
         }
 
-        public void EnsureDefaultOps()
+        /// <summary>
+        /// Seeds the default auto-ops for an op step. Intended for brand-new steps only
+        /// (called from the constructor) - never call this during load/commit/run, or an
+        /// intentionally-empty op list would be silently repopulated.
+        /// </summary>
+        public void SeedDefaultOps()
         {
-            if (IsOp && (preOps == null || preOps.Count == 0))
+            if (IsOp)
             {
                 preOps = new List<string>
                 {
@@ -191,15 +217,18 @@ namespace Plugins
                     AutoOpIds.ToolPrompt,
                     AutoOpIds.AutoZero
                 };
-            }
-            if (IsOp && (postOps == null || postOps.Count == 0))
-            {
                 postOps = new List<string>
                 {
                     AutoOpIds.SpindleOff,
                     AutoOpIds.MoveToolChange
                 };
             }
+            EnsureOpsNotNull();
+        }
+
+        /// <summary>Guarantees the op lists are non-null without changing their contents.</summary>
+        public void EnsureOpsNotNull()
+        {
             if (preOps == null) preOps = new List<string>();
             if (postOps == null) postOps = new List<string>();
         }
@@ -207,7 +236,7 @@ namespace Plugins
         public void NormalizeType()
         {
             if (type == "flip") type = "gate";
-            EnsureDefaultOps();
+            EnsureOpsNotNull();
         }
     }
 
@@ -222,6 +251,7 @@ namespace Plugins
         /// <summary>When true, probe / tool-change values on this project replace global defaults.</summary>
         public bool overrideMachineSettings { get; set; }
         public ToolChangePos toolChangePos { get; set; }
+        public ParkPos parkPos { get; set; }
         public ProbeSettings probe { get; set; }
         public bool useSafeZForTc { get; set; }
 
@@ -233,6 +263,7 @@ namespace Plugins
             image = "";
             steps = new List<WorkflowStep>();
             toolChangePos = new ToolChangePos();
+            parkPos = new ParkPos();
             probe = new ProbeSettings();
             useSafeZForTc = true;
         }
@@ -350,12 +381,14 @@ namespace Plugins
         public static void NormalizeDocument(ProjectsDocument doc)
         {
             if (doc.settings == null) doc.settings = new MaestroSettings();
+            if (doc.settings.parkPos == null) doc.settings.parkPos = new ParkPos();
             if (doc.projects == null) doc.projects = new List<WorkflowProject>();
 
             foreach (var project in doc.projects)
             {
                 if (project.steps == null) project.steps = new List<WorkflowStep>();
                 if (project.toolChangePos == null) project.toolChangePos = new ToolChangePos();
+                if (project.parkPos == null) project.parkPos = new ParkPos();
                 if (project.probe == null) project.probe = new ProbeSettings();
                 foreach (var step in project.steps)
                 {
@@ -484,6 +517,7 @@ namespace Plugins
             var merged = Serializer.Deserialize<MaestroSettings>(json) ?? new MaestroSettings();
             merged.probe = project.probe ?? new ProbeSettings();
             merged.toolChangePos = project.toolChangePos ?? new ToolChangePos();
+            merged.parkPos = project.parkPos ?? new ParkPos();
             merged.useSafeZForTc = project.useSafeZForTc;
             return merged;
         }
