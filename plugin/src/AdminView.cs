@@ -62,7 +62,11 @@ namespace Plugins
         private bool _dirty;
 
         private WorkflowProject _selectedProject;
-        private int _selectedStepIndex = -1;
+        // The step the editor fields are currently bound to. Editor commits write
+        // to this object, so they are immune to list reordering/index changes.
+        // Selection itself is tracked solely by _stepList.SelectedIndex - there is
+        // no parallel selected-index field to drift out of sync.
+        private WorkflowStep _editingStep;
         private ToolInfo _selectedLibraryTool;
         private int _loadDepth;
         // True while the editor is being populated from the model, so user-driven
@@ -559,14 +563,11 @@ namespace Plugins
         private void OnOpsItemCheck(CheckedListBox list, ItemCheckEventArgs e, bool isPreOps)
         {
             if (_loadingEditor) return;
-            if (_selectedProject == null || _selectedStepIndex < 0 ||
-                _selectedStepIndex >= _selectedProject.steps.Count)
-                return;
+            if (_editingStep == null) return;
 
             var ops = BuildOpsList(list, e.Index, e.NewValue == CheckState.Checked);
-            var step = _selectedProject.steps[_selectedStepIndex];
-            if (isPreOps) step.preOps = ops;
-            else step.postOps = ops;
+            if (isPreOps) _editingStep.preOps = ops;
+            else _editingStep.postOps = ops;
             MarkDirty();
         }
 
@@ -706,7 +707,7 @@ namespace Plugins
             else
             {
                 _selectedProject = null;
-                _selectedStepIndex = -1;
+                _editingStep = null;
                 ClearProjectFields();
                 ClearStepFields();
             }
@@ -717,19 +718,22 @@ namespace Plugins
             CommitEditorToModel();
             _selectedProject = _projectList.SelectedItem as WorkflowProject;
             ApplyProjectFields();
-            RefreshStepList();
+            RefreshStepList(0);
         }
 
-        private void RefreshStepList()
+        // Rebuilds the step list from the model and selects desiredIndex (clamped),
+        // then loads that step into the editor. The SelectedIndexChanged handler is
+        // detached so this programmatic rebuild doesn't trigger a redundant commit.
+        private void RefreshStepList(int desiredIndex)
         {
             _stepList.SelectedIndexChanged -= StepList_SelectedIndexChanged;
             try
             {
-                int keepIndex = _selectedStepIndex;
                 _stepList.Items.Clear();
-                if (_selectedProject == null || _selectedProject.steps == null)
+                if (_selectedProject == null || _selectedProject.steps == null ||
+                    _selectedProject.steps.Count == 0)
                 {
-                    _selectedStepIndex = -1;
+                    _editingStep = null;
                     ClearStepFields();
                     return;
                 }
@@ -740,19 +744,11 @@ namespace Plugins
                     _stepList.Items.Add((i + 1) + ". [" + step.type + "] " + step.label);
                 }
 
-                if (_stepList.Items.Count == 0)
-                {
-                    _selectedStepIndex = -1;
-                    ClearStepFields();
-                    return;
-                }
+                if (desiredIndex < 0 || desiredIndex >= _stepList.Items.Count)
+                    desiredIndex = 0;
 
-                if (keepIndex < 0 || keepIndex >= _stepList.Items.Count)
-                    keepIndex = 0;
-
-                _selectedStepIndex = keepIndex;
-                _stepList.SelectedIndex = keepIndex;
-                ApplyStepFields();
+                _stepList.SelectedIndex = desiredIndex;
+                LoadStep(desiredIndex);
             }
             finally
             {
@@ -770,16 +766,12 @@ namespace Plugins
         {
             if (_loadingEditor) return;
 
-            int newIndex = _stepList.SelectedIndex;
-            if (newIndex == _selectedStepIndex) return;
-
+            // Commit the step the editor was bound to (_editingStep) BEFORE loading
+            // the newly selected one. Because the commit targets the object, not an
+            // index, it lands on the right step even though _stepList.SelectedIndex
+            // has already advanced to the new row.
             CommitEditorToModel();
-
-            _selectedStepIndex = newIndex;
-            if (newIndex >= 0)
-                ApplyStepFields();
-            else
-                ClearStepFields();
+            LoadStep(_stepList.SelectedIndex);
         }
 
         private void CommitEditorToModel()
@@ -824,16 +816,30 @@ namespace Plugins
             }
         }
 
-        private void ApplyStepFields()
+        // Binds the editor to the step at the given list index and populates the
+        // fields. A negative/out-of-range index clears the editor and unbinds.
+        private void LoadStep(int index)
         {
             if (_selectedProject == null || _selectedProject.steps == null ||
-                _selectedStepIndex < 0 || _selectedStepIndex >= _selectedProject.steps.Count)
+                index < 0 || index >= _selectedProject.steps.Count)
+            {
+                _editingStep = null;
+                ClearStepFields();
+                return;
+            }
+
+            _editingStep = _selectedProject.steps[index];
+            ApplyStepFields(_editingStep);
+        }
+
+        private void ApplyStepFields(WorkflowStep step)
+        {
+            if (step == null)
             {
                 ClearStepFields();
                 return;
             }
 
-            var step = _selectedProject.steps[_selectedStepIndex];
             step.NormalizeType();
             if (step.preOps == null) step.preOps = new List<string>();
             if (step.postOps == null) step.postOps = new List<string>();
@@ -923,10 +929,9 @@ namespace Plugins
                 _selectedProject.image = _projectImageBox.Text.Trim();
             }
 
-            if (_selectedProject == null || _selectedStepIndex < 0 || _selectedStepIndex >= _selectedProject.steps.Count)
-                return;
+            var step = _editingStep;
+            if (step == null) return;
 
-            var step = _selectedProject.steps[_selectedStepIndex];
             step.label = _stepLabelBox.Text.Trim();
             step.type = _stepTypeCombo.SelectedItem != null ? _stepTypeCombo.SelectedItem.ToString() : "op";
             step.file = _stepFileBox.Text.Trim();
@@ -939,21 +944,38 @@ namespace Plugins
             step.postOps = GetCheckedOps(_postOpsList);
             step.NormalizeType();
 
-            if (_stepList.SelectedIndex >= 0 && _stepList.SelectedIndex < _stepList.Items.Count)
+            UpdateStepListLabel(step);
+        }
+
+        // Refreshes the list row that represents the given step. The row is found by
+        // the step's actual position in the model (IndexOf), so the label always
+        // tracks the correct step regardless of where the visual selection is.
+        private void UpdateStepListLabel(WorkflowStep step)
+        {
+            if (step == null || _selectedProject == null || _selectedProject.steps == null)
+                return;
+
+            int index = _selectedProject.steps.IndexOf(step);
+            if (index < 0 || index >= _stepList.Items.Count) return;
+
+            string listText = (index + 1) + ". [" + step.type + "] " + step.label;
+            if (string.Equals(_stepList.Items[index], listText)) return;
+
+            // Reassigning a ListBox item does a native remove+re-insert, which drops
+            // and restores the selection and re-fires SelectedIndexChanged. That
+            // handler would reload the editor and reset the textbox caret to 0,
+            // making fields type backwards. Detach while updating, and restore the
+            // visual selection in case the reassign moved it.
+            _stepList.SelectedIndexChanged -= StepList_SelectedIndexChanged;
+            try
             {
-                string listText = (_selectedStepIndex + 1) + ". [" + step.type + "] " + step.label;
-                if (!string.Equals(_stepList.Items[_stepList.SelectedIndex], listText))
-                {
-                    // Reassigning a ListBox item does a native remove+re-insert,
-                    // which drops and restores the selection and re-fires
-                    // SelectedIndexChanged. That handler reloads the editor and
-                    // resets the textbox caret to 0, making fields type backwards.
-                    // Detach while updating so the live edit isn't disturbed.
-                    _stepList.SelectedIndexChanged -= StepList_SelectedIndexChanged;
-                    try { _stepList.Items[_stepList.SelectedIndex] = listText; }
-                    finally { _stepList.SelectedIndexChanged += StepList_SelectedIndexChanged; }
-                }
+                int keepSelection = _stepList.SelectedIndex;
+                _stepList.Items[index] = listText;
+                if (_stepList.SelectedIndex != keepSelection &&
+                    keepSelection >= 0 && keepSelection < _stepList.Items.Count)
+                    _stepList.SelectedIndex = keepSelection;
             }
+            finally { _stepList.SelectedIndexChanged += StepList_SelectedIndexChanged; }
         }
 
         private static List<string> GetCheckedOps(CheckedListBox list)
@@ -1029,33 +1051,36 @@ namespace Plugins
             if (_selectedProject == null) return;
             CommitEditorToModel();
             _selectedProject.steps.Add(new WorkflowStep());
-            _selectedStepIndex = _selectedProject.steps.Count - 1;
-            RefreshStepList();
+            RefreshStepList(_selectedProject.steps.Count - 1);
             MarkDirty();
         }
 
         private void DelStepBtn_Click(object sender, EventArgs e)
         {
-            if (_selectedProject == null || _selectedStepIndex < 0) return;
+            if (_selectedProject == null) return;
+            int index = _stepList.SelectedIndex;
+            if (index < 0) return;
             CommitEditorToModel();
-            _selectedProject.steps.RemoveAt(_selectedStepIndex);
-            if (_selectedStepIndex >= _selectedProject.steps.Count)
-                _selectedStepIndex = _selectedProject.steps.Count - 1;
-            RefreshStepList();
+            _selectedProject.steps.RemoveAt(index);
+            int next = index;
+            if (next >= _selectedProject.steps.Count)
+                next = _selectedProject.steps.Count - 1;
+            RefreshStepList(next);
             MarkDirty();
         }
 
         private void MoveStep(int delta)
         {
-            if (_selectedProject == null || _selectedStepIndex < 0) return;
+            if (_selectedProject == null) return;
+            int index = _stepList.SelectedIndex;
+            if (index < 0) return;
             CommitEditorToModel();
-            int newIndex = _selectedStepIndex + delta;
+            int newIndex = index + delta;
             if (newIndex < 0 || newIndex >= _selectedProject.steps.Count) return;
-            var item = _selectedProject.steps[_selectedStepIndex];
-            _selectedProject.steps.RemoveAt(_selectedStepIndex);
+            var item = _selectedProject.steps[index];
+            _selectedProject.steps.RemoveAt(index);
             _selectedProject.steps.Insert(newIndex, item);
-            _selectedStepIndex = newIndex;
-            RefreshStepList();
+            RefreshStepList(newIndex);
             MarkDirty();
         }
 
