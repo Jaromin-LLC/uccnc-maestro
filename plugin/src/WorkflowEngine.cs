@@ -13,6 +13,7 @@ namespace Plugins
         public event Action<bool> RunningChanged;
         public event Action<WorkflowStep, int, bool> PromptRequired;
         public event Action RunFinished;
+        public event Action<WorkflowProject> ProjectCompleted;
 
         private readonly UCCNCplugin _host;
         private readonly Form _owner;
@@ -183,6 +184,8 @@ namespace Plugins
             _state.lastProjectId = project.id;
             SaveState();
 
+            bool lastStepCompleted = false;
+
             try
             {
                 var ops = new MachineOps(_host.UC, _document.settings, project, _owner, InvokeUi);
@@ -238,6 +241,8 @@ namespace Plugins
                     RunStateStore.SetDone(_state, project.id, i, true);
                     SaveState();
                     RaiseStepStatus(i, StepRunStatus.Done);
+                    if (i == project.steps.Count - 1)
+                        lastStepCompleted = true;
                 }
 
                 if (!_abortRequested)
@@ -252,6 +257,8 @@ namespace Plugins
                 _activeStepIndex = -1;
                 SetRunning(false);
                 if (RunFinished != null) RunFinished();
+                if (lastStepCompleted && !_abortRequested && ProjectCompleted != null)
+                    InvokeUi(() => ProjectCompleted(project));
             }
         }
 
@@ -274,11 +281,12 @@ namespace Plugins
 
             ops.SetActiveProbeTool(GetToolForStep(step));
 
-            foreach (string opId in step.preOps)
+            foreach (WorkflowOp op in step.preOps)
             {
                 if (_abortRequested) return false;
+                if (op == null || string.IsNullOrEmpty(op.id)) continue;
 
-                if (opId == AutoOpIds.ToolPrompt)
+                if (op.id == AutoOpIds.ToolPrompt)
                 {
                     if (!WaitForOperatorConfirm(step, stepIndex, false)) return false;
                     var tool = GetToolForStep(step);
@@ -287,7 +295,7 @@ namespace Plugins
                     continue;
                 }
 
-                if (!ops.ExecuteAutoOp(opId, step, SetStatus, () => _abortRequested))
+                if (!ops.ExecuteAutoOp(op, step, SetStatus, () => _abortRequested))
                     return false;
             }
 
@@ -301,10 +309,11 @@ namespace Plugins
 
             if (_abortRequested) return false;
 
-            foreach (string opId in step.postOps)
+            foreach (WorkflowOp op in step.postOps)
             {
                 if (_abortRequested) return false;
-                if (!ops.ExecuteAutoOp(opId, step, SetStatus, () => _abortRequested))
+                if (op == null || string.IsNullOrEmpty(op.id)) continue;
+                if (!ops.ExecuteAutoOp(op, step, SetStatus, () => _abortRequested))
                     return false;
             }
 

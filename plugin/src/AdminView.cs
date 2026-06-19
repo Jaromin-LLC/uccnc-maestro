@@ -42,8 +42,7 @@ namespace Plugins
         private TextBox _photoBox;
         private TextBox _videoBox;
         private PictureBox _photoPreview;
-        private CheckedListBox _preOpsList;
-        private CheckedListBox _postOpsList;
+        private OpsSequenceEditor _opsEditor;
         private TextBox _mediaRootBox;
         private CheckBox _testModeBox;
         private readonly ToolTip _toolTips;
@@ -93,18 +92,6 @@ namespace Plugins
             }
         }
 
-        private static readonly string[] AutoOpLabels =
-        {
-            AutoOpIds.MoveToolChange + " | Move to tool change",
-            AutoOpIds.ToolPrompt + " | Tool install prompt",
-            AutoOpIds.AutoZero + " | Auto zero (probe)",
-            AutoOpIds.SpindleOff + " | Spindle off",
-            AutoOpIds.GotoWorkZero + " | Go to work zero",
-            AutoOpIds.ParkG28 + " | Park (G28)",
-            AutoOpIds.ParkG30 + " | Park (G30)",
-            AutoOpIds.ParkCustom + " | Park (custom position)",
-            AutoOpIds.CustomMdi + " | Custom MDI"
-        };
 
         public AdminView(MaestroForm host, WorkflowEngine engine)
         {
@@ -388,19 +375,18 @@ namespace Plugins
             stepGroup.Controls.Add(playVideoBtn);
             sy += 34;
 
-            stepGroup.Controls.Add(MkLabel("Pre Ops", 12, sy));
-            _preOpsList = new CheckedListBox { Location = new Point(124, sy), Size = new Size(220, 140) };
-            stepGroup.Controls.Add(_preOpsList);
-            stepGroup.Controls.Add(MkLabel("Post Ops", 354, sy));
-            _postOpsList = new CheckedListBox { Location = new Point(434, sy), Size = new Size(220, 140) };
-            stepGroup.Controls.Add(_postOpsList);
-            stepGroup.Height = Math.Max(sy + _postOpsList.Height + 12, 44 + _photoPreview.Height + 12);
-
-            foreach (var label in AutoOpLabels)
+            stepGroup.Controls.Add(MkLabel("Operations", 12, sy));
+            _opsEditor = new OpsSequenceEditor
             {
-                _preOpsList.Items.Add(label);
-                _postOpsList.Items.Add(label);
-            }
+                Location = new Point(124, sy),
+                Size = new Size(620, 200),
+                Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Right
+            };
+            _opsEditor.Changed += () => { if (!_loadingEditor) MarkDirty(); };
+            stepGroup.Controls.Add(_opsEditor);
+            sy += 206;
+
+            stepGroup.Height = Math.Max(sy + 12, 44 + _photoPreview.Height + 12);
 
             scroll.Controls.Add(stepGroup);
 
@@ -556,35 +542,6 @@ namespace Plugins
             _stepInstructionsBox.TextChanged += EditorChanged;
             _photoBox.TextChanged += EditorChanged;
             _videoBox.TextChanged += EditorChanged;
-            _preOpsList.ItemCheck += (s, e) => OnOpsItemCheck(_preOpsList, e, true);
-            _postOpsList.ItemCheck += (s, e) => OnOpsItemCheck(_postOpsList, e, false);
-        }
-
-        // Applies a pre/post-op checkbox change immediately to the currently selected
-        // step. ItemCheck fires BEFORE the control's checked state is updated, so the
-        // changed item's value is read from e.NewValue rather than GetItemChecked - this
-        // avoids the old deferred BeginInvoke, whose write could land on a different step
-        // if the selection changed before it ran.
-        private void OnOpsItemCheck(CheckedListBox list, ItemCheckEventArgs e, bool isPreOps)
-        {
-            if (_loadingEditor) return;
-            if (_editingStep == null) return;
-
-            var ops = BuildOpsList(list, e.Index, e.NewValue == CheckState.Checked);
-            if (isPreOps) _editingStep.preOps = ops;
-            else _editingStep.postOps = ops;
-            MarkDirty();
-        }
-
-        private static List<string> BuildOpsList(CheckedListBox list, int changedIndex, bool changedValue)
-        {
-            var result = new List<string>();
-            for (int i = 0; i < list.Items.Count; i++)
-            {
-                bool isChecked = (i == changedIndex) ? changedValue : list.GetItemChecked(i);
-                if (isChecked) result.Add(AutoOpLabels[i].Split('|')[0].Trim());
-            }
-            return result;
         }
 
         private void OverrideMachineBox_CheckedChanged(object sender, EventArgs e)
@@ -852,8 +809,8 @@ namespace Plugins
             }
 
             step.NormalizeType();
-            if (step.preOps == null) step.preOps = new List<string>();
-            if (step.postOps == null) step.postOps = new List<string>();
+            if (step.preOps == null) step.preOps = new List<WorkflowOp>();
+            if (step.postOps == null) step.postOps = new List<WorkflowOp>();
 
             using (BeginLoad())
             {
@@ -866,8 +823,7 @@ namespace Plugins
                 RefreshStepToolCombo(step.toolId);
                 _photoBox.Text = step.photo ?? "";
                 _videoBox.Text = step.video ?? "";
-                SetCheckedOps(_preOpsList, step.preOps);
-                SetCheckedOps(_postOpsList, step.postOps);
+                _opsEditor.Bind(step);
                 LoadPhotoPreview(step.photo);
             }
         }
@@ -884,8 +840,7 @@ namespace Plugins
                 _photoBox.Text = "";
                 _videoBox.Text = "";
                 _photoPreview.Image = null;
-                ClearCheckedOps(_preOpsList);
-                ClearCheckedOps(_postOpsList);
+                _opsEditor.Clear();
             }
         }
 
@@ -953,8 +908,7 @@ namespace Plugins
             step.toolId = GetSelectedStepToolId();
             step.photo = _photoBox.Text.Trim();
             step.video = _videoBox.Text.Trim();
-            step.preOps = GetCheckedOps(_preOpsList);
-            step.postOps = GetCheckedOps(_postOpsList);
+            step.EnsureOpsNotNull();
             step.NormalizeType();
 
             UpdateStepListLabel(step);
@@ -989,33 +943,6 @@ namespace Plugins
                     _stepList.SelectedIndex = keepSelection;
             }
             finally { _stepList.SelectedIndexChanged += StepList_SelectedIndexChanged; }
-        }
-
-        private static List<string> GetCheckedOps(CheckedListBox list)
-        {
-            var result = new List<string>();
-            for (int i = 0; i < list.Items.Count; i++)
-            {
-                if (list.GetItemChecked(i))
-                    result.Add(AutoOpLabels[i].Split('|')[0].Trim());
-            }
-            return result;
-        }
-
-        private static void SetCheckedOps(CheckedListBox list, List<string> ids)
-        {
-            if (ids == null) ids = new List<string>();
-            for (int i = 0; i < list.Items.Count; i++)
-            {
-                string id = AutoOpLabels[i].Split('|')[0].Trim();
-                list.SetItemChecked(i, ids.Contains(id));
-            }
-        }
-
-        private static void ClearCheckedOps(CheckedListBox list)
-        {
-            for (int i = 0; i < list.Items.Count; i++)
-                list.SetItemChecked(i, false);
         }
 
         private void AddProjectBtn_Click(object sender, EventArgs e)

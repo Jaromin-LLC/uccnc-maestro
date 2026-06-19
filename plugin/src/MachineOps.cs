@@ -659,11 +659,12 @@ namespace Plugins
             return true;
         }
 
-        public bool ExecuteAutoOp(string opId, WorkflowStep step, Action<string> status, Func<bool> isAborted)
+        public bool ExecuteAutoOp(WorkflowOp op, WorkflowStep step, Action<string> status, Func<bool> isAborted)
         {
             if (isAborted != null && isAborted()) return false;
+            if (op == null || string.IsNullOrEmpty(op.id)) return true;
 
-            switch (opId)
+            switch (op.id)
             {
                 case AutoOpIds.MoveToolChange:
                     return MoveToolChange(status);
@@ -680,11 +681,11 @@ namespace Plugins
                 case AutoOpIds.ParkCustom:
                     return ParkCustom(status);
                 case AutoOpIds.CustomMdi:
-                    return RunCustomMdi(step != null ? step.customMdi : "", status);
+                    return RunCustomMdi(op.mdi ?? "", status);
                 case AutoOpIds.ToolPrompt:
                     return true;
                 default:
-                    if (status != null) status("Unknown auto-op: " + opId);
+                    if (status != null) status("Unknown auto-op: " + op.id);
                     return true;
             }
         }

@@ -190,6 +190,7 @@ namespace Plugins
             _engine.PromptRequired += Engine_PromptRequired;
             _engine.StatusChanged += msg => { if (_statusLabel != null) _statusLabel.Text = msg; };
             _engine.RunFinished += () => { StopLiveRuntime(); HideOverlay(); UpdateRunButtonStates(); };
+            _engine.ProjectCompleted += Engine_ProjectCompleted;
 
             _runtimeTimer = new Timer { Interval = 1000 };
             _runtimeTimer.Tick += RuntimeTimer_Tick;
@@ -548,7 +549,8 @@ namespace Plugins
                 if (cell == null) continue;
 
                 var step = _currentProject.steps[r];
-                bool toolChange = step.IsOp && step.preOps != null && step.preOps.Contains(AutoOpIds.ToolPrompt);
+                bool toolChange = step.IsOp && step.preOps != null &&
+                    step.preOps.Exists(o => o != null && o.id == AutoOpIds.ToolPrompt);
                 if (step.IsGate)
                     cell.Label = "BEGIN";
                 else if (toolChange)
@@ -771,6 +773,16 @@ namespace Plugins
                     "Reset Project", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                 return;
             _engine.ResetProject(_currentProject);
+            RefreshStepGrid();
+        }
+
+        private void Engine_ProjectCompleted(WorkflowProject project)
+        {
+            if (project == null) return;
+            MessageBox.Show(_host,
+                "Project complete: " + project.name + "\r\n\r\nPress OK to reset for another run.",
+                "Project Complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            _engine.ResetProject(project);
             RefreshStepGrid();
         }
 

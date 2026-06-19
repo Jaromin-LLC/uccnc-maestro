@@ -147,6 +147,33 @@ namespace Plugins
         }
     }
 
+    /// <summary>
+    /// One instance of an auto-op in a step's pre/post sequence. The same id may
+    /// appear multiple times (e.g. two custom MDI commands with different mdi text).
+    /// </summary>
+    public class WorkflowOp
+    {
+        public string id { get; set; }
+        public string mdi { get; set; }
+
+        public WorkflowOp()
+        {
+            id = "";
+            mdi = "";
+        }
+
+        public WorkflowOp(string opId)
+        {
+            id = opId ?? "";
+            mdi = "";
+        }
+
+        public WorkflowOp Clone()
+        {
+            return new WorkflowOp { id = id ?? "", mdi = mdi ?? "" };
+        }
+    }
+
     public class WorkflowStep
     {
         public string type { get; set; }
@@ -158,9 +185,8 @@ namespace Plugins
         public string notes { get; set; }
         public string photo { get; set; }
         public string video { get; set; }
-        public List<string> preOps { get; set; }
-        public List<string> postOps { get; set; }
-        public string customMdi { get; set; }
+        public List<WorkflowOp> preOps { get; set; }
+        public List<WorkflowOp> postOps { get; set; }
 
         public WorkflowStep()
         {
@@ -172,9 +198,8 @@ namespace Plugins
             notes = "";
             photo = "";
             video = "";
-            preOps = new List<string>();
-            postOps = new List<string>();
-            customMdi = "";
+            preOps = new List<WorkflowOp>();
+            postOps = new List<WorkflowOp>();
 
             // Seed sensible defaults for a brand-new op step. This runs only at
             // construction; on JSON load the deserializer overwrites preOps/postOps
@@ -211,16 +236,16 @@ namespace Plugins
         {
             if (IsOp)
             {
-                preOps = new List<string>
+                preOps = new List<WorkflowOp>
                 {
-                    AutoOpIds.MoveToolChange,
-                    AutoOpIds.ToolPrompt,
-                    AutoOpIds.AutoZero
+                    new WorkflowOp(AutoOpIds.MoveToolChange),
+                    new WorkflowOp(AutoOpIds.ToolPrompt),
+                    new WorkflowOp(AutoOpIds.AutoZero)
                 };
-                postOps = new List<string>
+                postOps = new List<WorkflowOp>
                 {
-                    AutoOpIds.SpindleOff,
-                    AutoOpIds.MoveToolChange
+                    new WorkflowOp(AutoOpIds.SpindleOff),
+                    new WorkflowOp(AutoOpIds.MoveToolChange)
                 };
             }
             EnsureOpsNotNull();
@@ -229,8 +254,8 @@ namespace Plugins
         /// <summary>Guarantees the op lists are non-null without changing their contents.</summary>
         public void EnsureOpsNotNull()
         {
-            if (preOps == null) preOps = new List<string>();
-            if (postOps == null) postOps = new List<string>();
+            if (preOps == null) preOps = new List<WorkflowOp>();
+            if (postOps == null) postOps = new List<WorkflowOp>();
         }
 
         public void NormalizeType()
@@ -341,9 +366,114 @@ namespace Plugins
             }
 
             string json = File.ReadAllText(path, Encoding.UTF8);
+            json = MigrateLegacyOpsJson(json);
             var loaded = Serializer.Deserialize<ProjectsDocument>(json) ?? new ProjectsDocument();
             NormalizeDocument(loaded);
             return loaded;
+        }
+
+        /// <summary>
+        /// Converts legacy string-array preOps/postOps and step-level customMdi into
+        /// the WorkflowOp object format before typed deserialization.
+        /// </summary>
+        private static string MigrateLegacyOpsJson(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json)) return json;
+
+            object rootObj;
+            try { rootObj = Serializer.DeserializeObject(json); }
+            catch { return json; }
+
+            var root = rootObj as Dictionary<string, object>;
+            if (root == null) return json;
+
+            object projectsObj;
+            if (!root.TryGetValue("projects", out projectsObj)) return json;
+
+            var projects = projectsObj as object[];
+            if (projects == null) return json;
+
+            bool changed = false;
+            foreach (var projectObj in projects)
+            {
+                var project = projectObj as Dictionary<string, object>;
+                if (project == null) continue;
+
+                object stepsObj;
+                if (!project.TryGetValue("steps", out stepsObj)) continue;
+
+                var steps = stepsObj as object[];
+                if (steps == null) continue;
+
+                foreach (var stepObj in steps)
+                {
+                    var step = stepObj as Dictionary<string, object>;
+                    if (step == null) continue;
+
+                    string legacyMdi = "";
+                    object customMdiObj;
+                    if (step.TryGetValue("customMdi", out customMdiObj) && customMdiObj != null)
+                        legacyMdi = customMdiObj.ToString() ?? "";
+
+                    if (MigrateOpListField(step, "preOps", legacyMdi)) changed = true;
+                    if (MigrateOpListField(step, "postOps", "")) changed = true;
+
+                    if (step.ContainsKey("customMdi"))
+                    {
+                        step.Remove("customMdi");
+                        changed = true;
+                    }
+                }
+            }
+
+            return changed ? Serializer.Serialize(rootObj) : json;
+        }
+
+        private static bool MigrateOpListField(Dictionary<string, object> step, string fieldName, string legacyMdi)
+        {
+            object listObj;
+            if (!step.TryGetValue(fieldName, out listObj)) return false;
+
+            var rawList = listObj as object[];
+            if (rawList == null) return false;
+
+            bool needsMigration = false;
+            foreach (var item in rawList)
+            {
+                if (item is string)
+                {
+                    needsMigration = true;
+                    break;
+                }
+            }
+
+            if (!needsMigration && string.IsNullOrEmpty(legacyMdi)) return false;
+
+            var migrated = new List<object>();
+            bool mdiApplied = false;
+            foreach (var item in rawList)
+            {
+                var opDict = item as Dictionary<string, object>;
+                if (opDict != null)
+                {
+                    migrated.Add(opDict);
+                    continue;
+                }
+
+                var opId = item as string;
+                if (opId == null) continue;
+
+                var entry = new Dictionary<string, object> { { "id", opId }, { "mdi", "" } };
+                if (!mdiApplied && opId == AutoOpIds.CustomMdi && !string.IsNullOrEmpty(legacyMdi))
+                {
+                    entry["mdi"] = legacyMdi;
+                    mdiApplied = true;
+                }
+                migrated.Add(entry);
+            }
+
+            step[fieldName] = migrated.ToArray();
+            return true;
         }
 
         public static void SaveProjects(string path, ProjectsDocument doc)
