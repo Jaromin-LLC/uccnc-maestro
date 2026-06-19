@@ -17,6 +17,7 @@ namespace Plugins
         private readonly Label _liveStatusLabel;
         private readonly Label _liveMachineLabel;
         private bool _mustClose;
+        private IntPtr _uccncHandle = IntPtr.Zero;
 
         public WorkflowEngine Engine { get; private set; }
 
@@ -109,6 +110,40 @@ namespace Plugins
             CheckForIllegalCrossThreadCalls = false;
             _operatorView.ReloadProjects();
             _adminView.LoadDocument(Engine.Document);
+        }
+
+        /// <summary>
+        /// Shows Maestro as an owned window of the UCCNC main window so UCCNC
+        /// cannot cover it when cycle start raises the controller window.
+        /// </summary>
+        public void ShowOwnedByUccnc()
+        {
+            _uccncHandle = UccncWindow.GetMainHandle();
+
+            if (!Visible)
+            {
+                if (_uccncHandle != IntPtr.Zero)
+                    Show(new WindowWrapper(_uccncHandle));
+                else
+                    Show();
+            }
+            else if (_uccncHandle != IntPtr.Zero && IsHandleCreated)
+            {
+                UccncWindow.SetOwner(Handle, _uccncHandle);
+            }
+
+            BringToFront();
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+
+            if (_uccncHandle == IntPtr.Zero)
+                _uccncHandle = UccncWindow.GetMainHandle();
+
+            if (_uccncHandle != IntPtr.Zero)
+                UccncWindow.SetOwner(Handle, _uccncHandle);
         }
 
         public void UpdateLiveStatus()

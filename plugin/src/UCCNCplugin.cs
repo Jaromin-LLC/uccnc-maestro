@@ -44,14 +44,13 @@ namespace Plugins
         public void Startup_event()
         {
             EnsureForm();
-            _form.Show();
+            _form.ShowOwnedByUccnc();
         }
 
         public void Showup_event()
         {
             EnsureForm();
-            _form.Show();
-            _form.BringToFront();
+            _form.ShowOwnedByUccnc();
         }
 
         public void Shutdown_event()
