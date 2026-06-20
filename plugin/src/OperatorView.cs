@@ -40,6 +40,21 @@ namespace Plugins
         private DateTime _stepRunStarted = DateTime.MinValue;
         private int _liveRuntimeStepIndex = -1;
 
+        private Panel _progressOverlay;
+        private Panel _progressCard;
+        private Label _progressProjectLabel;
+        private Label _progressStepLabel;
+        private Label _progressFileLabel;
+        private Label _progressCaption;
+        private Label _progressCountdown;
+        private ProgressBar _progressBar;
+        private Button _progressCancelButton;
+        private Button _progressCloseButton;
+        private int _runningEstimateSeconds;
+        private bool _progressClosed;
+        private int _fileCurrentLine;
+        private int _fileTotalLines;
+
         private enum RowVisualState
         {
             Done,
@@ -167,6 +182,7 @@ namespace Plugins
             foreach (DataGridViewColumn col in _stepGrid.Columns)
                 col.SortMode = DataGridViewColumnSortMode.NotSortable;
             _stepGrid.CellContentClick += StepGrid_CellContentClick;
+            _stepGrid.CellClick += StepGrid_CellClick;
             _stepGrid.CellFormatting += StepGrid_CellFormatting;
 
             _statusLabel = new Label
@@ -183,17 +199,22 @@ namespace Plugins
             _overlay = BuildOverlay(out _card, out _overlayBanner, out _overlayGraphic, out _overlayPhoto,
                 out _overlayInstructions, out _playVideoButton, out _cancelPromptButton, out _confirmButton);
 
+            _progressOverlay = BuildProgressOverlay();
+
             Controls.Add(_stepGrid);
             Controls.Add(_statusLabel);
             Controls.Add(buttonPanel);
             Controls.Add(topPanel);
             Controls.Add(_overlay);
+            Controls.Add(_progressOverlay);
 
             _engine.StepStatusChanged += Engine_StepStatusChanged;
+            _engine.StepWorkStarted += Engine_StepWorkStarted;
+            _engine.FileProgressChanged += Engine_FileProgressChanged;
             _engine.RunningChanged += Engine_RunningChanged;
             _engine.PromptRequired += Engine_PromptRequired;
             _engine.StatusChanged += msg => { if (_statusLabel != null) _statusLabel.Text = msg; };
-            _engine.RunFinished += () => { StopLiveRuntime(); HideOverlay(); UpdateRunButtonStates(); };
+            _engine.RunFinished += Engine_RunFinished;
             _engine.ProjectCompleted += Engine_ProjectCompleted;
 
             _runtimeTimer = new Timer { Interval = 1000 };
@@ -333,6 +354,156 @@ namespace Plugins
             card.Size = new Size(w, h);
             card.Left = Math.Max(0, (overlay.ClientSize.Width - card.Width) / 2);
             card.Top = Math.Max(0, (overlay.ClientSize.Height - card.Height) / 2);
+        }
+
+        // Large, glanceable progress view shown while an op step is cutting. It is a
+        // non-blocking overlay (not ShowDialog) so the engine keeps driving the run and
+        // the operator-prompt overlay can still take over for tool changes / gates.
+        private Panel BuildProgressOverlay()
+        {
+            var overlay = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.FromArgb(30, 30, 35),
+                Visible = false
+            };
+
+            var card = new Panel
+            {
+                Size = new Size(860, 580),
+                BackColor = Color.White,
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            _progressCard = card;
+
+            var layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 3,
+                Padding = new Padding(0)
+            };
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 84F));   // project banner
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));   // body
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 104F));  // buttons
+
+            _progressProjectLabel = new Label
+            {
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Font = new Font("Segoe UI", 24F, FontStyle.Bold),
+                ForeColor = Color.White,
+                BackColor = Color.FromArgb(0, 122, 204),
+                AutoEllipsis = true
+            };
+
+            var body = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 8,
+                Padding = new Padding(28, 12, 28, 12)
+            };
+            body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            body.RowStyles.Add(new RowStyle(SizeType.Absolute, 44F));    // step label
+            body.RowStyles.Add(new RowStyle(SizeType.Absolute, 26F));    // file label
+            body.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));     // top spacer (centers block)
+            body.RowStyles.Add(new RowStyle(SizeType.Absolute, 30F));    // caption
+            body.RowStyles.Add(new RowStyle(SizeType.Absolute, 130F));   // big clock (above bar)
+            body.RowStyles.Add(new RowStyle(SizeType.Absolute, 42F));    // progress bar
+            body.RowStyles.Add(new RowStyle(SizeType.Absolute, 22F));    // reopen hint
+            body.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));     // bottom spacer
+
+            _progressStepLabel = new Label
+            {
+                Dock = DockStyle.Fill,
+                Font = new Font("Segoe UI", 20F, FontStyle.Bold),
+                TextAlign = ContentAlignment.MiddleLeft,
+                AutoEllipsis = true
+            };
+            _progressFileLabel = new Label
+            {
+                Dock = DockStyle.Fill,
+                Font = new Font("Segoe UI", 12F),
+                ForeColor = Color.FromArgb(110, 110, 110),
+                TextAlign = ContentAlignment.MiddleLeft,
+                AutoEllipsis = true
+            };
+            _progressCaption = new Label
+            {
+                Dock = DockStyle.Fill,
+                Font = new Font("Segoe UI", 13F, FontStyle.Bold),
+                ForeColor = Color.FromArgb(110, 110, 110),
+                TextAlign = ContentAlignment.MiddleCenter
+            };
+            _progressCountdown = new Label
+            {
+                Dock = DockStyle.Fill,
+                Font = new Font("Segoe UI", 60F, FontStyle.Bold),
+                ForeColor = Color.FromArgb(0, 90, 30),
+                TextAlign = ContentAlignment.MiddleCenter,
+                AutoSize = false
+            };
+            _progressBar = new ProgressBar
+            {
+                Dock = DockStyle.Fill,
+                Minimum = 0,
+                Maximum = 1000,
+                Style = ProgressBarStyle.Continuous,
+                Margin = new Padding(0, 2, 0, 2)
+            };
+            var hint = new Label
+            {
+                Dock = DockStyle.Fill,
+                Font = new Font("Segoe UI", 9F, FontStyle.Italic),
+                ForeColor = Color.FromArgb(140, 140, 140),
+                TextAlign = ContentAlignment.MiddleCenter,
+                Text = "Closing leaves the run going \u2014 tap the running step to reopen this view."
+            };
+
+            body.Controls.Add(_progressStepLabel, 0, 0);
+            body.Controls.Add(_progressFileLabel, 0, 1);
+            body.Controls.Add(_progressCaption, 0, 3);
+            body.Controls.Add(_progressCountdown, 0, 4);
+            body.Controls.Add(_progressBar, 0, 5);
+            body.Controls.Add(hint, 0, 6);
+
+            var buttons = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 2,
+                RowCount = 1,
+                Padding = new Padding(20, 8, 20, 16)
+            };
+            buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            buttons.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+            _progressCancelButton = MakeButton("CANCEL OPERATION", Color.FromArgb(180, 40, 40), 16F, 64);
+            _progressCancelButton.Dock = DockStyle.Fill;
+            _progressCancelButton.Margin = new Padding(0, 0, 10, 0);
+            _progressCancelButton.Click += ProgressCancelButton_Click;
+
+            _progressCloseButton = MakeButton("CLOSE", Color.FromArgb(100, 100, 100), 16F, 64);
+            _progressCloseButton.Dock = DockStyle.Fill;
+            _progressCloseButton.Margin = new Padding(10, 0, 0, 0);
+            _progressCloseButton.Click += ProgressCloseButton_Click;
+
+            buttons.Controls.Add(_progressCancelButton, 0, 0);
+            buttons.Controls.Add(_progressCloseButton, 1, 0);
+
+            layout.Controls.Add(_progressProjectLabel, 0, 0);
+            layout.Controls.Add(body, 0, 1);
+            layout.Controls.Add(buttons, 0, 2);
+
+            card.Controls.Add(layout);
+            overlay.Controls.Add(card);
+
+            var cardRef = card;
+            overlay.Resize += (s, e) => LayoutOverlayCard(overlay, cardRef);
+
+            return overlay;
         }
 
         private static Button MakeButton(string text, Color backColor, float fontSize, int height)
@@ -492,6 +663,8 @@ namespace Plugins
             if (_liveRuntimeStepIndex >= _stepGrid.Rows.Count) return;
             int elapsed = Math.Max(1, (int)(DateTime.Now - _stepRunStarted).TotalSeconds);
             _stepGrid.Rows[_liveRuntimeStepIndex].Cells["Runtime"].Value = FormatRuntime(elapsed);
+            if (_progressOverlay != null && _progressOverlay.Visible)
+                UpdateProgressDisplay();
         }
 
         private int ActiveRowIndex()
@@ -652,6 +825,19 @@ namespace Plugins
             e.CellStyle.Font = new Font(_stepGrid.Font, fontStyle);
         }
 
+        // While a run is in progress, tapping the currently running step reopens the
+        // progress overlay if the operator had closed it.
+        private void StepGrid_CellClick(object sender, DataGridViewCellEventArgs e)
+        {
+            if (e.RowIndex < 0 || !_engine.IsRunning) return;
+            if (e.ColumnIndex == _stepGrid.Columns["Video"].Index ||
+                e.ColumnIndex == _stepGrid.Columns["Run"].Index) return;
+            if (e.RowIndex != ActiveRowIndex()) return;
+
+            _progressClosed = false;
+            RefreshProgressVisibility();
+        }
+
         private void StepGrid_CellContentClick(object sender, DataGridViewCellEventArgs e)
         {
             if (e.RowIndex < 0 || _currentProject == null) return;
@@ -795,28 +981,179 @@ namespace Plugins
             _engine.RequestAbort();
         }
 
+        // Engine status/run events are raised on the background run thread. All UI work
+        // (especially showing/laying out the progress overlay and starting the runtime
+        // timer) must happen on the UI thread, or the controls' handles get created on
+        // the worker thread and the plugin deadlocks.
+        private void Engine_RunFinished()
+        {
+            if (InvokeRequired) { BeginInvoke((Action)Engine_RunFinished); return; }
+            StopLiveRuntime();
+            HideOverlay();
+            RefreshProgressVisibility();
+            UpdateRunButtonStates();
+        }
+
         private void Engine_StepStatusChanged(int index, StepRunStatus status)
         {
+            if (InvokeRequired) { BeginInvoke((Action)(() => Engine_StepStatusChanged(index, status))); return; }
             _stepStatuses[index] = status;
-            if (status == StepRunStatus.Running)
-                StartLiveRuntime(index);
-            else
+            // The live runtime clock and progress view are driven by StepWorkStarted (after
+            // any tool change), not the Running status, so the estimate only covers machine
+            // work. Here we just react to a step ending.
+            if (status != StepRunStatus.Running)
             {
                 StopLiveRuntime();
                 if (status == StepRunStatus.Done)
                     UpdateRuntimeCell(index);
+                RefreshProgressVisibility();
             }
             UpdateRunButtonStates();
         }
 
+        // Machine work for a step has begun (tool change, if any, is done). Start the
+        // remaining-time countdown from now and show the progress view.
+        private void Engine_StepWorkStarted(int index)
+        {
+            if (InvokeRequired) { BeginInvoke((Action)(() => Engine_StepWorkStarted(index))); return; }
+            _progressClosed = false;
+            _fileCurrentLine = 0;
+            _fileTotalLines = 0;
+            _runningEstimateSeconds = _currentProject != null
+                ? RunStateStore.GetLastRunSeconds(_engine.State, _currentProject.id, index)
+                : 0;
+            StartLiveRuntime(index);
+            RefreshProgressVisibility();
+        }
+
+        private void Engine_FileProgressChanged(int current, int total)
+        {
+            if (InvokeRequired) { BeginInvoke((Action)(() => Engine_FileProgressChanged(current, total))); return; }
+            _fileCurrentLine = current;
+            _fileTotalLines = total;
+            if (_progressOverlay != null && _progressOverlay.Visible)
+                UpdateProgressDisplay();
+        }
+
         private void Engine_RunningChanged(bool running)
         {
+            if (InvokeRequired) { BeginInvoke((Action)(() => Engine_RunningChanged(running))); return; }
             _runAllButton.Enabled = !running;
             _runFromButton.Enabled = !running;
             _resetButton.Enabled = !running;
             _abortButton.Enabled = running;
             _projectCombo.Enabled = !running;
             UpdateRunButtonStates();
+            RefreshProgressVisibility();
+        }
+
+        // Shows the progress overlay only while an op step is actively running and no
+        // operator prompt (tool change / gate) is on screen, and only if the operator
+        // hasn't dismissed it for the current step.
+        private void RefreshProgressVisibility()
+        {
+            if (_progressOverlay == null) return;
+
+            bool shouldShow =
+                _engine.IsRunning &&
+                _liveRuntimeStepIndex >= 0 &&
+                !_progressClosed &&
+                !_overlay.Visible &&
+                IsOpStep(_liveRuntimeStepIndex);
+
+            if (shouldShow)
+            {
+                UpdateProgressDisplay();
+                _progressOverlay.Visible = true;
+                _progressOverlay.BringToFront();
+                LayoutOverlayCard(_progressOverlay, _progressCard);
+            }
+            else
+            {
+                _progressOverlay.Visible = false;
+            }
+        }
+
+        private bool IsOpStep(int index)
+        {
+            if (_currentProject == null || _currentProject.steps == null) return false;
+            if (index < 0 || index >= _currentProject.steps.Count) return false;
+            return _currentProject.steps[index].IsOp;
+        }
+
+        private void UpdateProgressDisplay()
+        {
+            if (_currentProject == null || _liveRuntimeStepIndex < 0 ||
+                _liveRuntimeStepIndex >= _currentProject.steps.Count) return;
+
+            var step = _currentProject.steps[_liveRuntimeStepIndex];
+            _progressProjectLabel.Text = _currentProject.name ?? "";
+            _progressStepLabel.Text = "Step " + (_liveRuntimeStepIndex + 1) + " of " +
+                _currentProject.steps.Count + ":  " + step.label;
+            string file = (step.file ?? "").Trim();
+            _progressFileLabel.Text = string.IsNullOrEmpty(file) ? "" : Path.GetFileName(file);
+
+            int elapsed = Math.Max(0, (int)(DateTime.Now - _stepRunStarted).TotalSeconds);
+
+            // Clock = estimated time remaining (countdown) when a prior run time exists;
+            // otherwise a plain elapsed count-up.
+            if (_runningEstimateSeconds > 0)
+            {
+                int remaining = Math.Max(0, _runningEstimateSeconds - elapsed);
+                _progressCaption.Text = "ESTIMATED TIME REMAINING";
+                _progressCountdown.Text = FormatClock(remaining);
+                _progressCountdown.ForeColor = remaining > 0
+                    ? Color.FromArgb(0, 90, 30)
+                    : Color.FromArgb(150, 90, 30);
+            }
+            else
+            {
+                _progressCaption.Text = "ELAPSED  (no estimate yet)";
+                _progressCountdown.Text = FormatClock(elapsed);
+                _progressCountdown.ForeColor = Color.FromArgb(0, 90, 30);
+            }
+
+            // Bar = actual g-code file progress (% of lines executed). When the line count
+            // is unknown (e.g. demo mode), fall back to a time-based fill against the
+            // estimate so the bar still moves.
+            _progressBar.Visible = true;
+            double fraction;
+            if (_fileTotalLines > 0)
+                fraction = (double)_fileCurrentLine / _fileTotalLines;
+            else if (_runningEstimateSeconds > 0)
+                fraction = (double)elapsed / _runningEstimateSeconds;
+            else
+                fraction = 0;
+
+            if (fraction < 0) fraction = 0;
+            if (fraction > 1) fraction = 1;
+            _progressBar.Value = (int)Math.Round(1000.0 * fraction);
+        }
+
+        private static string FormatClock(int totalSeconds)
+        {
+            if (totalSeconds < 0) totalSeconds = 0;
+            int hours = totalSeconds / 3600;
+            int minutes = (totalSeconds % 3600) / 60;
+            int seconds = totalSeconds % 60;
+            if (hours > 0)
+                return hours + ":" + minutes.ToString("00") + ":" + seconds.ToString("00");
+            return minutes + ":" + seconds.ToString("00");
+        }
+
+        private void ProgressCloseButton_Click(object sender, EventArgs e)
+        {
+            _progressClosed = true;
+            _progressOverlay.Visible = false;
+        }
+
+        private void ProgressCancelButton_Click(object sender, EventArgs e)
+        {
+            if (MessageBox.Show(_host,
+                    "Cancel the running operation?",
+                    "Cancel Operation", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                return;
+            _engine.RequestAbort();
         }
 
         private void Engine_PromptRequired(WorkflowStep step, int stepIndex, bool isGateOnly)
@@ -847,6 +1184,7 @@ namespace Plugins
             }
 
             ShowOverlay();
+            RefreshProgressVisibility();
         }
 
         private void SetGraphicGlyph(string glyph)
@@ -917,12 +1255,14 @@ namespace Plugins
         {
             HideOverlay();
             _engine.ConfirmPrompt();
+            RefreshProgressVisibility();
         }
 
         private void CancelPromptButton_Click(object sender, EventArgs e)
         {
             HideOverlay();
             _engine.CancelPrompt();
+            RefreshProgressVisibility();
         }
 
         private void ShowOverlay()

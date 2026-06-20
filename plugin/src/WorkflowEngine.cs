@@ -15,6 +15,14 @@ namespace Plugins
         public event Action RunFinished;
         public event Action<WorkflowProject> ProjectCompleted;
 
+        // Raised when a step's measured machine work begins (after any tool change is
+        // confirmed), so the UI can start the remaining-time countdown from that point.
+        public event Action<int> StepWorkStarted;
+
+        // Raised with (currentLine, totalLines) while a g-code file is running so the UI
+        // can show real file progress. totalLines is 0 when unknown (e.g. demo mode).
+        public event Action<int, int> FileProgressChanged;
+
         private readonly UCCNCplugin _host;
         private readonly Form _owner;
 
@@ -31,6 +39,7 @@ namespace Plugins
         private WorkflowProject _activeProject;
         private int _activeStepIndex = -1;
         private bool _running;
+        private int _currentFileTotalLines;
 
         public WorkflowEngine(UCCNCplugin host, Form owner)
         {
@@ -267,19 +276,34 @@ namespace Plugins
             _activeStepIndex = stepIndex;
             WorkflowStep step = project.steps[stepIndex];
             step.EnsureOpsNotNull();
-            var stepTimer = Stopwatch.StartNew();
 
             RaiseStepStatus(stepIndex, StepRunStatus.Running);
             SetStatus("Running step " + (stepIndex + 1) + ": " + step.label);
 
             if (step.IsGate)
             {
-                if (!WaitForOperatorConfirm(step, stepIndex, true)) return false;
-                RecordStepRuntime(project.id, stepIndex, stepTimer);
-                return true;
+                // Gate steps are a pure operator pause - there is no machine work to time.
+                return WaitForOperatorConfirm(step, stepIndex, true);
             }
 
             ops.SetActiveProbeTool(GetToolForStep(step));
+
+            // The remaining-time estimate measures only the unattended machine work: it
+            // starts when the tool change is confirmed (or immediately, if the step has no
+            // tool prompt) and ends after the last post-op. Operator time spent at the
+            // tool-change prompt is excluded so the recorded estimate is repeatable.
+            bool hasToolPrompt = step.preOps.Exists(o => o != null && o.id == AutoOpIds.ToolPrompt);
+            var workTimer = new Stopwatch();
+            bool workStarted = false;
+            Action beginWork = delegate
+            {
+                if (workStarted) return;
+                workStarted = true;
+                workTimer.Start();
+                if (StepWorkStarted != null) StepWorkStarted(stepIndex);
+            };
+
+            if (!hasToolPrompt) beginWork();
 
             foreach (WorkflowOp op in step.preOps)
             {
@@ -292,6 +316,7 @@ namespace Plugins
                     var tool = GetToolForStep(step);
                     if (tool != null)
                         ops.SetCurrentTool(tool.id, SetStatus);
+                    beginWork();
                     continue;
                 }
 
@@ -301,6 +326,9 @@ namespace Plugins
 
             string fullPath = (step.file ?? "").Trim();
 
+            _currentFileTotalLines = CountFileLines(fullPath);
+            RaiseFileProgress(0, _currentFileTotalLines);
+
             if (!ops.LoadAndRunFile(fullPath, SetStatus, () => _abortRequested, WaitForCycleFinish,
                     () => { _cycleStartedEvent.Reset(); _cycleFinishedEvent.Reset(); },
                     () => _cycleStartedEvent.WaitOne(0),
@@ -308,6 +336,8 @@ namespace Plugins
                 return false;
 
             if (_abortRequested) return false;
+
+            RaiseFileProgress(_currentFileTotalLines, _currentFileTotalLines);
 
             foreach (WorkflowOp op in step.postOps)
             {
@@ -318,7 +348,7 @@ namespace Plugins
             }
 
             SetStatus("Step complete: " + step.label);
-            RecordStepRuntime(project.id, stepIndex, stepTimer);
+            if (workStarted) RecordStepRuntime(project.id, stepIndex, workTimer);
             return true;
         }
 
@@ -329,11 +359,43 @@ namespace Plugins
             SaveState();
         }
 
+        // Counts physical lines in the g-code file so the UI can show file progress as a
+        // percentage. Returns 0 (unknown) when the file is missing or unreadable, e.g. in
+        // demo mode, so the UI falls back to a time-based bar.
+        private int CountFileLines(string path)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(path) || !File.Exists(path)) return 0;
+                int count = 0;
+                using (var reader = new StreamReader(path))
+                    while (reader.ReadLine() != null) count++;
+                return count;
+            }
+            catch { return 0; }
+        }
+
+        private void RaiseFileProgress(int current, int total)
+        {
+            if (FileProgressChanged != null) FileProgressChanged(current, total);
+        }
+
+        private void ReportLiveFileProgress()
+        {
+            if (FileProgressChanged == null) return;
+            int current;
+            try { current = _host.UC.Getcurrentgcodelinenumber(); }
+            catch { return; }
+            if (current < 0) return;
+            FileProgressChanged(current, _currentFileTotalLines);
+        }
+
         private void WaitForCycleFinish()
         {
             while (!_cycleFinishedEvent.WaitOne(200))
             {
                 if (_abortRequested) return;
+                ReportLiveFileProgress();
                 if (!_host.UC.GetLED(54)) break;
             }
         }
