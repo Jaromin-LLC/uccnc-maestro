@@ -282,8 +282,28 @@ namespace Plugins
 
             if (step.IsGate)
             {
-                // Gate steps are a pure operator pause - there is no machine work to time.
-                return WaitForOperatorConfirm(step, stepIndex, true);
+                // Gate pre-ops run before the prompt so the machine can clear the work
+                // area (e.g. Park) ahead of the operator action; post-ops run after the
+                // operator confirms. There is no g-code file or work-time to record.
+                foreach (WorkflowOp op in step.preOps)
+                {
+                    if (_abortRequested) return false;
+                    if (op == null || string.IsNullOrEmpty(op.id)) continue;
+                    if (!ops.ExecuteAutoOp(op, step, SetStatus, () => _abortRequested))
+                        return false;
+                }
+
+                if (!WaitForOperatorConfirm(step, stepIndex, true)) return false;
+
+                foreach (WorkflowOp op in step.postOps)
+                {
+                    if (_abortRequested) return false;
+                    if (op == null || string.IsNullOrEmpty(op.id)) continue;
+                    if (!ops.ExecuteAutoOp(op, step, SetStatus, () => _abortRequested))
+                        return false;
+                }
+
+                return true;
             }
 
             ops.SetActiveProbeTool(GetToolForStep(step));
