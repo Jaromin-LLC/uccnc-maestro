@@ -157,11 +157,15 @@ namespace Plugins
             _stepGrid.Columns.Add("ToolNum", "Tool");
             _stepGrid.Columns.Add("Tool", "Tool Description");
             _stepGrid.Columns.Add("Runtime", "Runtime");
-            _stepGrid.Columns.Add(new DataGridViewButtonColumn { Name = "Video", HeaderText = "Video", UseColumnTextForButtonValue = false, FlatStyle = FlatStyle.Standard, AutoSizeMode = DataGridViewAutoSizeColumnMode.None, Width = 110 });
+            _stepGrid.Columns.Add(new DataGridViewButtonColumn { Name = "Video", HeaderText = "Video", UseColumnTextForButtonValue = false, FlatStyle = FlatStyle.Standard, AutoSizeMode = DataGridViewAutoSizeColumnMode.None, Width = 80 });
             _stepGrid.Columns.Add(new DataGridViewDisableButtonColumn { Name = "Run", HeaderText = "Action", Text = "RUN", UseColumnTextForButtonValue = true, AutoSizeMode = DataGridViewAutoSizeColumnMode.None, Width = 150 });
-            _stepGrid.Columns["ToolNum"].FillWeight = 35;
+            _stepGrid.Columns["Status"].AutoSizeMode = DataGridViewAutoSizeColumnMode.AllCells;
+            _stepGrid.Columns["Operation"].FillWeight = 220;
+            _stepGrid.Columns["ToolNum"].AutoSizeMode = DataGridViewAutoSizeColumnMode.AllCells;
             _stepGrid.Columns["Tool"].FillWeight = 110;
             _stepGrid.Columns["Runtime"].FillWeight = 40;
+            foreach (DataGridViewColumn col in _stepGrid.Columns)
+                col.SortMode = DataGridViewColumnSortMode.NotSortable;
             _stepGrid.CellContentClick += StepGrid_CellContentClick;
             _stepGrid.CellFormatting += StepGrid_CellFormatting;
 

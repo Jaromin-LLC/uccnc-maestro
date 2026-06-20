@@ -30,6 +30,8 @@ namespace Plugins
         private TextBox _stepFileBox;
         private TextBox _stepInstructionsBox;
         private ComboBox _stepToolCombo;
+        private Button _browseGcodeBtn;
+        private Button _newToolBtn;
         private TextBox _libToolNumBox;
         private TextBox _libToolTypeBox;
         private TextBox _libToolDiaBox;
@@ -335,9 +337,9 @@ namespace Plugins
             _stepFileBox = MkText(124, sy, 320);
             stepGroup.Controls.Add(_stepFileBox);
             _toolTips.SetToolTip(_stepFileBox, "Full path to the G-code file run for this step. The file can live anywhere (e.g. your CAM output folder).");
-            var browseGcodeBtn = new Button { Text = "Browse...", Location = new Point(454, sy - 2), Width = 80 };
-            browseGcodeBtn.Click += BrowseGcodeBtn_Click;
-            stepGroup.Controls.Add(browseGcodeBtn); sy += 28;
+            _browseGcodeBtn = new Button { Text = "Browse...", Location = new Point(454, sy - 2), Width = 80 };
+            _browseGcodeBtn.Click += BrowseGcodeBtn_Click;
+            stepGroup.Controls.Add(_browseGcodeBtn); sy += 28;
 
             stepGroup.Controls.Add(MkLabel("Instructions", 12, sy));
             _stepInstructionsBox = MkText(124, sy, 420, 70, true);
@@ -352,9 +354,9 @@ namespace Plugins
             };
             _stepToolCombo.SelectedIndexChanged += StepToolCombo_SelectedIndexChanged;
             stepGroup.Controls.Add(_stepToolCombo);
-            var newToolBtn = new Button { Text = "New Tool...", Location = new Point(454, sy - 2), Width = 90 };
-            newToolBtn.Click += NewToolFromStepBtn_Click;
-            stepGroup.Controls.Add(newToolBtn);
+            _newToolBtn = new Button { Text = "New Tool...", Location = new Point(454, sy - 2), Width = 90 };
+            _newToolBtn.Click += NewToolFromStepBtn_Click;
+            stepGroup.Controls.Add(_newToolBtn);
             sy += 36;
 
             _photoBox = new TextBox();
@@ -391,9 +393,20 @@ namespace Plugins
             scroll.Controls.Add(stepGroup);
 
             _stepTypeCombo.SelectedIndexChanged += (s, e) => EditorChanged(s, e);
+            _stepTypeCombo.SelectedIndexChanged += (s, e) => UpdateStepTypeEnabledState();
             HookEditorChanges();
 
             return scroll;
+        }
+
+        private void UpdateStepTypeEnabledState()
+        {
+            bool isGate = string.Equals(_stepTypeCombo.SelectedItem as string, "gate", StringComparison.OrdinalIgnoreCase);
+            bool enabled = !isGate;
+            if (_stepFileBox != null) _stepFileBox.Enabled = enabled;
+            if (_browseGcodeBtn != null) _browseGcodeBtn.Enabled = enabled;
+            if (_stepToolCombo != null) _stepToolCombo.Enabled = enabled;
+            if (_newToolBtn != null) _newToolBtn.Enabled = enabled;
         }
 
         private Panel BuildToolsPanel()
@@ -826,6 +839,7 @@ namespace Plugins
                 _opsEditor.Bind(step);
                 LoadPhotoPreview(step.photo);
             }
+            UpdateStepTypeEnabledState();
         }
 
         private void ClearStepFields()
@@ -842,6 +856,7 @@ namespace Plugins
                 _photoPreview.Image = null;
                 _opsEditor.Clear();
             }
+            UpdateStepTypeEnabledState();
         }
 
         private void LoadSettingsFields()
