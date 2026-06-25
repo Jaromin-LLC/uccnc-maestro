@@ -24,7 +24,8 @@ namespace Plugins
         public MaestroForm(UCCNCplugin plugin)
         {
             _plugin = plugin;
-            Text = "Jaromin CNC Maestro  -  build " + BuildInfo.Id;
+            Text = "(uc)CNC Maestro  -  build " + BuildInfo.Id;
+            Icon = LoadEmbeddedIcon();
             Size = new Size(1180, 760);
             StartPosition = FormStartPosition.CenterScreen;
             MinimumSize = new Size(960, 640);
@@ -35,23 +36,23 @@ namespace Plugins
 
             _liveStatusLabel = new Label
             {
-                Dock = DockStyle.Top,
-                Height = 28,
+                Dock = DockStyle.Fill,
                 TextAlign = ContentAlignment.MiddleLeft,
-                BackColor = Color.FromArgb(45, 45, 48),
-                ForeColor = Color.White,
-                Padding = new Padding(8, 0, 0, 0),
+                BackColor = Color.Transparent,
+                ForeColor = Color.FromArgb(30, 30, 30),
+                Font = new Font("Segoe UI", 11F, FontStyle.Bold),
+                AutoEllipsis = true,
                 Text = "Ready"
             };
 
             _liveMachineLabel = new Label
             {
-                Dock = DockStyle.Top,
-                Height = 22,
+                Dock = DockStyle.Fill,
                 TextAlign = ContentAlignment.MiddleLeft,
-                BackColor = Color.FromArgb(60, 60, 63),
-                ForeColor = Color.LightGray,
-                Padding = new Padding(8, 0, 0, 0),
+                BackColor = Color.Transparent,
+                ForeColor = Color.FromArgb(90, 90, 90),
+                Font = new Font("Segoe UI", 9F),
+                AutoEllipsis = true,
                 Text = "Machine: Idle"
             };
 
@@ -82,8 +83,7 @@ namespace Plugins
             };
 
             Controls.Add(_tabs);
-            Controls.Add(_liveStatusLabel);
-            Controls.Add(_liveMachineLabel);
+            Controls.Add(BuildStatusBar());
 
             Engine.StatusChanged += msg => { if (!IsDisposed) _liveStatusLabel.Text = msg; };
             _adminView.DocumentSaved += () =>
@@ -94,6 +94,61 @@ namespace Plugins
 
             Load += MaestroForm_Load;
             FormClosing += MaestroForm_FormClosing;
+        }
+
+        // Bottom status bar: a transparent (form-colored) strip set off from the main
+        // screen by a recessed top edge, showing the live status and machine state.
+        private Panel BuildStatusBar()
+        {
+            var bar = new Panel
+            {
+                Dock = DockStyle.Bottom,
+                Height = 56,
+                BackColor = SystemColors.Control,
+                Padding = new Padding(12, 8, 12, 6)
+            };
+            bar.Paint += StatusBar_Paint;
+
+            var textArea = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 2,
+                BackColor = SystemColors.Control
+            };
+            textArea.RowStyles.Add(new RowStyle(SizeType.Percent, 56F));
+            textArea.RowStyles.Add(new RowStyle(SizeType.Percent, 44F));
+            textArea.Controls.Add(_liveStatusLabel, 0, 0);
+            textArea.Controls.Add(_liveMachineLabel, 0, 1);
+
+            bar.Controls.Add(textArea);
+            return bar;
+        }
+
+        // Classic recessed status-bar edge: a dark line above a light line along the top.
+        private static void StatusBar_Paint(object sender, PaintEventArgs e)
+        {
+            var bar = (Control)sender;
+            using (var shadow = new Pen(SystemColors.ControlDark))
+                e.Graphics.DrawLine(shadow, 0, 0, bar.Width, 0);
+            using (var highlight = new Pen(SystemColors.ControlLightLight))
+                e.Graphics.DrawLine(highlight, 0, 1, bar.Width, 1);
+        }
+
+        // The window icon is embedded in the DLL as a manifest resource (see make.ps1)
+        // so it ships inside the binary - no file path or installer change is needed.
+        private static Icon LoadEmbeddedIcon()
+        {
+            try
+            {
+                var asm = System.Reflection.Assembly.GetExecutingAssembly();
+                using (var stream = asm.GetManifestResourceStream("UccncMaestro.icon.ico"))
+                {
+                    if (stream == null) return null;
+                    return new Icon(stream);
+                }
+            }
+            catch { return null; }
         }
 
         private void Tabs_Selecting(object sender, TabControlCancelEventArgs e)

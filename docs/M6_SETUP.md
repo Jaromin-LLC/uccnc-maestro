@@ -1,4 +1,4 @@
-# Tool Touch-Off Setup (Jaromin CNC Maestro)
+# Tool Touch-Off Setup ((uc)CNC Maestro)
 
 Maestro runs its own two-pass tool touch-off (auto zero) **automatically before
 every operation** — the operator never runs it manually and cannot skip it. The

@@ -26,8 +26,8 @@ namespace Plugins
 
         public Plugininterface.Entry.Pluginproperties Getproperties_event(Plugininterface.Entry.Pluginproperties properties)
         {
-            properties.author = "Jaromin";
-            properties.pluginname = "JarominMaestro";
+            properties.author = "(uc)CNC Maestro";
+            properties.pluginname = "UccncMaestro";
             properties.pluginversion = "1.0.0";
             return properties;
         }
@@ -35,10 +35,10 @@ namespace Plugins
         public void Configure_event()
         {
             MessageBox.Show(
-                "Jaromin Maestro\nBuild: " + BuildInfo.Id +
+                "(uc)CNC Maestro\nBuild: " + BuildInfo.Id +
                 "\n\nConfiguration is stored in:\n" + MaestroPaths.ProjectsFile +
                 "\n\nUse the Admin tab in the Maestro window to edit workflows.",
-                "Jaromin Maestro", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                "(uc)CNC Maestro", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         public void Startup_event()

@@ -1,4 +1,4 @@
-# Jaromin CNC Maestro (UCCNC Plugin)
+# (uc)CNC Maestro (UCCNC Plugin)
 
 Native [UCCNC](https://www.cncdrive.com/UCCNC.html) plugin with an **Operator dashboard** for guided job execution and an **Admin builder** for configuring workflows, instructions, photos, and videos.
 
@@ -32,9 +32,9 @@ Everything is driven by a single make-style script at the repo root:
 ```powershell
 git clone https://github.com/Jaromin-LLC/uccnc-maestro.git
 cd uccnc-maestro
-.\make.ps1            # build   - compile plugin\src\*.cs -> plugin\build\JarominMaestro.dll
+.\make.ps1            # build   - compile plugin\src\*.cs -> plugin\build\UccncMaestro.dll
 .\make.ps1 install    # build + deploy DLL to C:\UCCNC + seed configs (first install only)
-.\make.ps1 package    # build + create dist\JarominMaestro-<version>.zip for shop PCs
+.\make.ps1 package    # build + create dist\UccncMaestro-<version>.zip for shop PCs
 .\make.ps1 clean      # delete plugin\build and dist
 ```
 
@@ -51,19 +51,19 @@ There are two paths. Most users want **option A**.
 Build a self-contained release on a machine that can compile, then hand the zip to the target machine:
 
 ```powershell
-.\make.ps1 package          # -> dist\JarominMaestro-<version>.zip
+.\make.ps1 package          # -> dist\UccncMaestro-<version>.zip
 ```
 
-The zip contains the prebuilt `JarominMaestro.dll`, the seed `config\projects.json` / `config\tools.json`, the graphical `Install.ps1` / `Install.bat`, and a README. **No build tools, source, or internet are needed on the target.** On the target machine:
+The zip contains the prebuilt `UccncMaestro.dll`, the seed `config\projects.json` / `config\tools.json`, the graphical `Install.ps1` / `Install.bat`, and a README. **No build tools, source, or internet are needed on the target.** On the target machine:
 
 1. Unzip the package
 2. **Close UCCNC**
 3. Double-click **`Install.bat`** — a setup window opens: it auto-detects your UCCNC folder (Browse to change it) and lets you choose whether existing workflow data (`projects.json` / `tools.json`) is **kept (default)** or **overwritten** with the bundled seeds
 4. Click **Install**
-5. Start UCCNC → **Configuration → Plugins** → enable **JarominMaestro**, check **Call startup**
+5. Start UCCNC → **Configuration → Plugins** → enable **UccncMaestro**, check **Call startup**
 6. Restart UCCNC — the Maestro window opens
 
-The installer copies the DLL into `<UCCNC>\Plugins` and removes a stale `JarominWizard.dll` if present.
+The installer copies the DLL into `<UCCNC>\Plugins` and removes a pre-rename `JarominMaestro.dll` (or the older `JarominWizard.dll`) if present.
 
 For an unattended install (no window): `Install.bat -UccncRoot "C:\UCCNC" -Yes` (add `-OverwriteConfigs` to replace existing workflow data).
 
@@ -80,9 +80,9 @@ One-time machine setup (probing / tool-change positions): [docs/M6_SETUP.md](doc
 ## How the installer is built
 
 ```
-plugin\src\*.cs              --make.ps1 build-->  plugin\build\JarominMaestro.dll
+plugin\src\*.cs              --make.ps1 build-->  plugin\build\UccncMaestro.dll
 plugin\config\*.json  ------------+
-plugin\build\JarominMaestro.dll  --+--make.ps1 package-->  dist\JarominMaestro\  -->  dist\JarominMaestro-<ver>.zip
+plugin\build\UccncMaestro.dll  --+--make.ps1 package-->  dist\UccncMaestro\  -->  dist\UccncMaestro-<ver>.zip
 installer\Install.ps1 / .bat  -----+      (+ Install.ps1, Install.bat, README.txt)
 ```
 
@@ -106,7 +106,7 @@ installer\Install.ps1 / .bat  -----+      (+ Install.ps1, Install.bat, README.tx
 
 | Path | Role |
 |------|------|
-| `C:\UCCNC\Plugins\JarominMaestro.dll` | Plugin binary |
+| `C:\UCCNC\Plugins\UccncMaestro.dll` | Plugin binary |
 | `C:\UCCNC\Maestro\projects.json` | Workflow definitions |
 | `C:\UCCNC\Maestro\state.json` | Step completion / last project |
 | `C:\UCCNC\Maestro\Media\` | Step photos and videos |

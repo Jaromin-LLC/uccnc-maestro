@@ -1,11 +1,11 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
 
-[assembly: AssemblyTitle("JarominMaestro")]
-[assembly: AssemblyDescription("Jaromin CNC Workflow Maestro for UCCNC")]
+[assembly: AssemblyTitle("UccncMaestro")]
+[assembly: AssemblyDescription("(uc)CNC Maestro workflow plugin for UCCNC")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("Jaromin")]
-[assembly: AssemblyProduct("Jaromin Maestro")]
+[assembly: AssemblyCompany("(uc)CNC Maestro")]
+[assembly: AssemblyProduct("(uc)CNC Maestro")]
 [assembly: AssemblyCopyright("")]
 [assembly: AssemblyTrademark("")]
 [assembly: ComVisible(false)]

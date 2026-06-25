@@ -1,12 +1,12 @@
-Jaromin CNC Maestro - UCCNC Plugin
-==================================
+(uc)CNC Maestro - UCCNC Plugin
+==============================
 
 This package installs the Maestro plugin into your UCCNC installation.
 No build tools or internet connection are required.
 
 WHAT'S IN HERE
 --------------
-  JarominMaestro.dll   The plugin (copied into <UCCNC>\Plugins)
+  UccncMaestro.dll     The plugin (copied into <UCCNC>\Plugins)
   config\projects.json Seed workflow config (copied into <UCCNC>\Maestro)
   config\tools.json    Seed tool library (copied into <UCCNC>\Maestro)
   Install.bat          Double-click installer (opens the setup window)
@@ -23,7 +23,7 @@ INSTALL
        - Overwrite with the bundled seed files (existing projects/tools are lost)
   5. Click Install and review the log.
   6. Start UCCNC.
-  7. Configuration -> Plugins -> enable "JarominMaestro" and check "Call startup".
+  7. Configuration -> Plugins -> enable "UccncMaestro" and check "Call startup".
   8. Restart UCCNC. The Maestro window opens automatically.
 
 UNATTENDED INSTALL (no window)
@@ -36,7 +36,8 @@ NOTES
 -----
   - With the default choice, existing projects.json / tools.json in
     <UCCNC>\Maestro are always preserved.
-  - If an older "JarominWizard.dll" is present it is removed automatically.
+  - If an older "JarominMaestro.dll" or "JarominWizard.dll" is present it is
+    removed automatically.
   - To uninstall: disable the plugin in UCCNC, then delete
-    <UCCNC>\Plugins\JarominMaestro.dll. Your workflow data in <UCCNC>\Maestro
+    <UCCNC>\Plugins\UccncMaestro.dll. Your workflow data in <UCCNC>\Maestro
     is left untouched.

@@ -2,7 +2,7 @@
 
 
 
-Jaromin Maestro is edited from the **Admin** tab in the plugin window. Projects are saved to `C:\UCCNC\Maestro\projects.json`; tools are saved to `C:\UCCNC\Maestro\tools.json`.
+(uc)CNC Maestro is edited from the **Admin** tab in the plugin window. Projects are saved to `C:\UCCNC\Maestro\projects.json`; tools are saved to `C:\UCCNC\Maestro\tools.json`.
 
 
 
@@ -34,7 +34,7 @@ When editing a project step, pick a tool from the **Tool** dropdown or click **N
 
 
 
-1. Open UCCNC with the Jaromin Maestro plugin enabled
+1. Open UCCNC with the (uc)CNC Maestro plugin enabled
 
 2. Switch to the **Admin** tab → **Projects**
 

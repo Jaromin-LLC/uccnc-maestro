@@ -20,7 +20,7 @@ namespace Plugins
         private readonly Button _runFromButton;
         private readonly Button _resetButton;
         private readonly Button _abortButton;
-        private readonly PictureBox _projectPhoto;
+        private readonly PictureBox _logoBox;
         private readonly Label _statusLabel;
 
         private readonly Panel _overlay;
@@ -139,17 +139,18 @@ namespace Plugins
             buttonPanel.Controls.Add(_resetButton);
             buttonPanel.Controls.Add(_abortButton);
 
-            _projectPhoto = new PictureBox
+            _logoBox = new PictureBox
             {
-                Width = 172,
-                Height = 150,
+                Width = 176,
+                Height = 144,
                 SizeMode = PictureBoxSizeMode.Zoom,
-                BorderStyle = BorderStyle.FixedSingle,
-                BackColor = Color.White,
-                Visible = false,
-                Margin = new Padding(0, 8, 0, 0)
+                BackColor = Color.FromArgb(245, 245, 245),
+                Margin = new Padding(0, 18, 0, 0)
             };
-            buttonPanel.Controls.Add(_projectPhoto);
+            Image logoImage = LoadEmbeddedLogo();
+            if (logoImage != null) _logoBox.Image = logoImage;
+            else _logoBox.Visible = false;
+            buttonPanel.Controls.Add(_logoBox);
 
             _stepGrid = new DataGridView
             {
@@ -172,7 +173,6 @@ namespace Plugins
             _stepGrid.Columns.Add("ToolNum", "Tool");
             _stepGrid.Columns.Add("Tool", "Tool Description");
             _stepGrid.Columns.Add("Runtime", "Runtime");
-            _stepGrid.Columns.Add(new DataGridViewButtonColumn { Name = "Video", HeaderText = "Video", UseColumnTextForButtonValue = false, FlatStyle = FlatStyle.Standard, AutoSizeMode = DataGridViewAutoSizeColumnMode.None, Width = 80 });
             _stepGrid.Columns.Add(new DataGridViewDisableButtonColumn { Name = "Run", HeaderText = "Action", Text = "RUN", UseColumnTextForButtonValue = true, AutoSizeMode = DataGridViewAutoSizeColumnMode.None, Width = 150 });
             _stepGrid.Columns["Status"].AutoSizeMode = DataGridViewAutoSizeColumnMode.AllCells;
             _stepGrid.Columns["Operation"].FillWeight = 220;
@@ -184,6 +184,7 @@ namespace Plugins
             _stepGrid.CellContentClick += StepGrid_CellContentClick;
             _stepGrid.CellClick += StepGrid_CellClick;
             _stepGrid.CellFormatting += StepGrid_CellFormatting;
+            _stepGrid.CellPainting += StepGrid_CellPainting;
 
             _statusLabel = new Label
             {
@@ -564,35 +565,7 @@ namespace Plugins
                 ? _currentProject.name
                 : _currentProject.description;
 
-            LoadProjectPhoto();
             RefreshStepGrid();
-        }
-
-        private void LoadProjectPhoto()
-        {
-            if (_projectPhoto.Image != null)
-            {
-                var old = _projectPhoto.Image;
-                _projectPhoto.Image = null;
-                old.Dispose();
-            }
-
-            if (_currentProject == null || string.IsNullOrEmpty(_currentProject.image))
-            {
-                _projectPhoto.Visible = false;
-                return;
-            }
-
-            string path = ResolveMediaPath(_currentProject.image);
-            var img = ImageUtil.LoadOriented(path);
-            if (img == null)
-            {
-                _projectPhoto.Visible = false;
-                return;
-            }
-
-            _projectPhoto.Image = img;
-            _projectPhoto.Visible = true;
         }
 
         private void RefreshStepGrid()
@@ -614,14 +587,7 @@ namespace Plugins
                 string toolText = tool != null ? tool.SizeDescription() : (step.IsGate ? "-" : "");
                 int lastRun = RunStateStore.GetLastRunSeconds(_engine.State, _currentProject.id, i);
 
-                int row = _stepGrid.Rows.Add(StatusText(GetRowVisualState(i)), step.label, toolNum, toolText, FormatRuntime(lastRun));
-
-                // Only rows with a video get a clickable button; others become a blank
-                // text cell so no empty button is drawn.
-                if (!string.IsNullOrEmpty(step.video))
-                    _stepGrid.Rows[row].Cells["Video"].Value = "\u25B6 VIDEO";
-                else
-                    _stepGrid.Rows[row].Cells["Video"] = new DataGridViewTextBoxCell { Value = "" };
+                _stepGrid.Rows.Add(StatusText(GetRowVisualState(i)), step.label, toolNum, toolText, FormatRuntime(lastRun));
             }
 
             UpdateRunButtonStates();
@@ -825,29 +791,274 @@ namespace Plugins
             e.CellStyle.Font = new Font(_stepGrid.Font, fontStyle);
         }
 
-        // While a run is in progress, tapping the currently running step reopens the
-        // progress overlay if the operator had closed it.
         private void StepGrid_CellClick(object sender, DataGridViewCellEventArgs e)
         {
-            if (e.RowIndex < 0 || !_engine.IsRunning) return;
-            if (e.ColumnIndex == _stepGrid.Columns["Video"].Index ||
-                e.ColumnIndex == _stepGrid.Columns["Run"].Index) return;
-            if (e.RowIndex != ActiveRowIndex()) return;
+            if (e.RowIndex < 0) return;
+            if (e.ColumnIndex == _stepGrid.Columns["Run"].Index) return;
 
-            _progressClosed = false;
-            RefreshProgressVisibility();
+            if (_engine.IsRunning)
+            {
+                // While running, tapping the active step reopens the progress view.
+                if (e.RowIndex != ActiveRowIndex()) return;
+                _progressClosed = false;
+                RefreshProgressVisibility();
+                return;
+            }
+
+            // Idle: tapping the Operation cell opens this step's photo/video (if any).
+            if (e.ColumnIndex == _stepGrid.Columns["Operation"].Index)
+                OpenStepMedia(e.RowIndex);
+        }
+
+        // Draws a small photo and/or video indicator at the right edge of the Operation
+        // cell for steps that have media, signalling that tapping the cell opens it.
+        private void StepGrid_CellPainting(object sender, DataGridViewCellPaintingEventArgs e)
+        {
+            if (e.RowIndex < 0 || _currentProject == null) return;
+            if (e.ColumnIndex != _stepGrid.Columns["Operation"].Index) return;
+            if (e.RowIndex >= _currentProject.steps.Count) return;
+
+            var step = _currentProject.steps[e.RowIndex];
+            bool hasPhoto = step != null && !string.IsNullOrEmpty(step.photo);
+            bool hasVideo = step != null && !string.IsNullOrEmpty(step.video);
+            if (!hasPhoto && !hasVideo) return;
+
+            e.Paint(e.CellBounds, DataGridViewPaintParts.All);
+
+            const int sz = 20;
+            const int gap = 6;
+            int count = (hasPhoto ? 1 : 0) + (hasVideo ? 1 : 0);
+            int totalW = count * sz + (count - 1) * gap;
+            int x = e.CellBounds.Right - 8 - totalW;
+            int y = e.CellBounds.Top + (e.CellBounds.Height - sz) / 2;
+
+            Color iconColor = Color.FromArgb(40, 61, 90);
+            var saved = e.Graphics.SmoothingMode;
+            e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            if (hasPhoto) { DrawPhotoIcon(e.Graphics, new Rectangle(x, y, sz, sz), iconColor); x += sz + gap; }
+            if (hasVideo) { DrawVideoIcon(e.Graphics, new Rectangle(x, y, sz, sz), iconColor); }
+            e.Graphics.SmoothingMode = saved;
+
+            e.Handled = true;
+        }
+
+        // Opens the step's media in a modal. Photo and Video buttons are enabled only for
+        // the media that exists. Default: show the photo if present, otherwise (video
+        // only) launch the video immediately.
+        private void OpenStepMedia(int rowIndex)
+        {
+            if (_currentProject == null || _currentProject.steps == null ||
+                rowIndex < 0 || rowIndex >= _currentProject.steps.Count) return;
+
+            var step = _currentProject.steps[rowIndex];
+            bool hasPhoto = !string.IsNullOrEmpty(step.photo);
+            bool hasVideo = !string.IsNullOrEmpty(step.video);
+            if (!hasPhoto && !hasVideo) return;
+
+            using (var dlg = BuildMediaDialog(step, hasPhoto, hasVideo))
+                dlg.ShowDialog(_host);
+        }
+
+        private Form BuildMediaDialog(WorkflowStep step, bool hasPhoto, bool hasVideo)
+        {
+            var dlg = new Form
+            {
+                Text = step.label,
+                FormBorderStyle = FormBorderStyle.Sizable,
+                StartPosition = FormStartPosition.CenterParent,
+                MinimizeBox = false,
+                MaximizeBox = true,
+                ShowInTaskbar = false,
+                ClientSize = new Size(820, 720),
+                MinimumSize = new Size(520, 480),
+                Font = new Font("Segoe UI", 12F),
+                Icon = _host != null ? _host.Icon : null
+            };
+
+            var photoBox = new PictureBox
+            {
+                Dock = DockStyle.Fill,
+                SizeMode = PictureBoxSizeMode.Zoom,
+                BackColor = Color.FromArgb(30, 30, 30)
+            };
+            var note = new Label
+            {
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleCenter,
+                ForeColor = Color.White,
+                BackColor = Color.FromArgb(30, 30, 30),
+                Font = new Font("Segoe UI", 14F),
+                Visible = false
+            };
+            var content = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(30, 30, 30) };
+            content.Controls.Add(note);
+            content.Controls.Add(photoBox);
+
+            Action showPhoto = () =>
+            {
+                var img = ImageUtil.LoadOriented(ResolveMediaPath(step.photo));
+                if (img == null)
+                {
+                    note.Text = "Photo could not be loaded.";
+                    note.Visible = true; photoBox.Visible = false;
+                    return;
+                }
+                var old = photoBox.Image;
+                photoBox.Image = img;
+                if (old != null) old.Dispose();
+                note.Visible = false; photoBox.Visible = true;
+            };
+            Action playVideo = () =>
+            {
+                PlayStepVideo(step);
+                if (!hasPhoto)
+                {
+                    note.Text = "Video opened in your media player.";
+                    note.Visible = true; photoBox.Visible = false;
+                }
+            };
+
+            var bar = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                Height = 80,
+                Padding = new Padding(12, 12, 12, 12),
+                BackColor = Color.FromArgb(245, 245, 245)
+            };
+
+            var photoBtn = MakeMediaButton("Photo", Color.FromArgb(0, 122, 204), false, hasPhoto);
+            photoBtn.Click += (s, e) => showPhoto();
+            var videoBtn = MakeMediaButton("Video", Color.FromArgb(70, 70, 70), true, hasVideo);
+            videoBtn.Click += (s, e) => playVideo();
+            var closeBtn = MakeButton("CLOSE", Color.FromArgb(120, 120, 120), 14F, 52);
+            closeBtn.Width = 120;
+            closeBtn.Margin = new Padding(0, 0, 0, 0);
+            closeBtn.Click += (s, e) => dlg.Close();
+
+            bar.Controls.Add(photoBtn);
+            bar.Controls.Add(videoBtn);
+            bar.Controls.Add(closeBtn);
+
+            dlg.Controls.Add(content);
+            dlg.Controls.Add(bar);
+
+            dlg.Shown += (s, e) =>
+            {
+                if (hasPhoto) showPhoto();
+                else playVideo();
+            };
+            return dlg;
+        }
+
+        private static Button MakeMediaButton(string text, Color back, bool video, bool enabled)
+        {
+            var b = MakeButton(text, back, 14F, 52);
+            b.Width = 150;
+            b.Image = MakeIconBitmap(24, video, Color.White);
+            b.ImageAlign = ContentAlignment.MiddleLeft;
+            b.TextAlign = ContentAlignment.MiddleRight;
+            b.TextImageRelation = TextImageRelation.ImageBeforeText;
+            b.Padding = new Padding(8, 0, 12, 0);
+            b.Margin = new Padding(0, 0, 12, 0);
+            b.Enabled = enabled;
+            return b;
+        }
+
+        private static Bitmap MakeIconBitmap(int size, bool video, Color color)
+        {
+            var bmp = new Bitmap(size, size);
+            using (var g = Graphics.FromImage(bmp))
+            {
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                var rect = new Rectangle(0, 0, size - 1, size - 1);
+                if (video) DrawVideoIcon(g, rect, color);
+                else DrawPhotoIcon(g, rect, color);
+            }
+            return bmp;
+        }
+
+        private static System.Drawing.Drawing2D.GraphicsPath RoundedRect(Rectangle r, int radius)
+        {
+            int d = radius * 2;
+            var path = new System.Drawing.Drawing2D.GraphicsPath();
+            if (d <= 0 || d > r.Width || d > r.Height) { path.AddRectangle(r); return path; }
+            path.AddArc(r.Left, r.Top, d, d, 180, 90);
+            path.AddArc(r.Right - d, r.Top, d, d, 270, 90);
+            path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+            path.AddArc(r.Left, r.Bottom - d, d, d, 90, 90);
+            path.CloseFigure();
+            return path;
+        }
+
+        // Outline-style icons so they read on both white grid cells (dark color) and
+        // colored buttons (white color).
+        private static void DrawPhotoIcon(Graphics g, Rectangle r, Color color)
+        {
+            float stroke = Math.Max(1.5f, r.Width / 11f);
+            using (var pen = new Pen(color, stroke))
+            using (var brush = new SolidBrush(color))
+            {
+                var frame = new Rectangle(r.Left, r.Top + (int)(r.Height * 0.16), r.Width - 1, (int)(r.Height * 0.68));
+                using (var path = RoundedRect(frame, Math.Max(2, r.Width / 7)))
+                    g.DrawPath(pen, path);
+                int sunD = Math.Max(2, (int)(r.Width * 0.16));
+                g.FillEllipse(brush, frame.Left + frame.Width / 6, frame.Top + frame.Height / 5, sunD, sunD);
+                var pts = new[]
+                {
+                    new Point(frame.Left + frame.Width / 7, frame.Bottom - frame.Height / 6),
+                    new Point(frame.Left + frame.Width / 2, frame.Top + frame.Height / 2),
+                    new Point(frame.Right - frame.Width / 8, frame.Bottom - frame.Height / 6)
+                };
+                g.FillPolygon(brush, pts);
+            }
+        }
+
+        private static void DrawVideoIcon(Graphics g, Rectangle r, Color color)
+        {
+            float stroke = Math.Max(1.5f, r.Width / 11f);
+            using (var pen = new Pen(color, stroke))
+            using (var brush = new SolidBrush(color))
+            {
+                var frame = new Rectangle(r.Left, r.Top + (int)(r.Height * 0.16), r.Width - 1, (int)(r.Height * 0.68));
+                using (var path = RoundedRect(frame, Math.Max(2, r.Width / 7)))
+                    g.DrawPath(pen, path);
+                int cx = frame.Left + frame.Width / 2;
+                int cy = frame.Top + frame.Height / 2;
+                int tw = Math.Max(3, frame.Width / 5);
+                int th = Math.Max(3, frame.Height / 4);
+                var pts = new[]
+                {
+                    new Point(cx - tw / 2, cy - th),
+                    new Point(cx - tw / 2, cy + th),
+                    new Point(cx + tw, cy)
+                };
+                g.FillPolygon(brush, pts);
+            }
+        }
+
+        // The full logo is embedded in the DLL as a manifest resource (see make.ps1) so it
+        // ships inside the binary - no file path or installer change is needed.
+        private static Image LoadEmbeddedLogo()
+        {
+            try
+            {
+                var asm = System.Reflection.Assembly.GetExecutingAssembly();
+                using (var stream = asm.GetManifestResourceStream("UccncMaestro.logo.png"))
+                {
+                    if (stream == null) return null;
+                    // The MemoryStream must stay open for the lifetime of the Image.
+                    var buffer = new MemoryStream();
+                    stream.CopyTo(buffer);
+                    buffer.Position = 0;
+                    return Image.FromStream(buffer);
+                }
+            }
+            catch { return null; }
         }
 
         private void StepGrid_CellContentClick(object sender, DataGridViewCellEventArgs e)
         {
             if (e.RowIndex < 0 || _currentProject == null) return;
-
-            if (e.ColumnIndex == _stepGrid.Columns["Video"].Index)
-            {
-                if (e.RowIndex < _currentProject.steps.Count)
-                    PlayStepVideo(_currentProject.steps[e.RowIndex]);
-                return;
-            }
 
             if (e.ColumnIndex != _stepGrid.Columns["Run"].Index) return;
             if (_engine.IsRunning) return;
@@ -1234,7 +1445,7 @@ namespace Plugins
         }
 
         // Opens the step's video in the OS default player. Shared by the prompt overlay
-        // button and the on-demand "VIDEO" button in the step grid.
+        // button and the media dialog opened from the Operation column indicator.
         private void PlayStepVideo(WorkflowStep step)
         {
             if (step == null || string.IsNullOrEmpty(step.video)) return;

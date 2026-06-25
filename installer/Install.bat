@@ -1,5 +1,5 @@
 @echo off
-REM Jaromin CNC Maestro - installer launcher
+REM (uc)CNC Maestro - installer launcher
 REM Double-click this file to open the setup window.
 REM For an unattended install from a terminal:
 REM   Install.bat -UccncRoot "D:\UCCNC" -Yes [-OverwriteConfigs]

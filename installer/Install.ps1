@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Graphical installer for the Jaromin CNC Maestro UCCNC plugin.
+  Graphical installer for the (uc)CNC Maestro UCCNC plugin.
 
 .DESCRIPTION
   Opens a setup window that lets you confirm the UCCNC folder and choose
@@ -42,7 +42,7 @@ param(
 $ErrorActionPreference = "Stop"
 $here = $PSScriptRoot
 
-$DllName = "JarominMaestro.dll"
+$DllName = "UccncMaestro.dll"
 $dllSource = Join-Path $here $DllName
 $configSource = Join-Path $here "config\projects.json"
 $toolsSource = Join-Path $here "config\tools.json"
@@ -78,11 +78,15 @@ function Install-Maestro {
     Copy-Item -Force $dllSource (Join-Path $pluginsDir $DllName)
     & $Log "[OK] Plugin -> $pluginsDir\$DllName"
 
-    # Remove the old (pre-rename) plugin if present so it cannot load alongside.
-    $legacyDll = Join-Path $pluginsDir "JarominWizard.dll"
-    if (Test-Path $legacyDll) {
-        Remove-Item -Force $legacyDll
-        & $Log "[OK] Removed old plugin -> $legacyDll"
+    # Remove old (pre-rename) plugin DLLs if present so they cannot load alongside
+    # the renamed UccncMaestro.dll. JarominMaestro.dll is the immediate predecessor;
+    # JarominWizard.dll is the original name from even earlier builds.
+    foreach ($legacyName in "JarominMaestro.dll", "JarominWizard.dll") {
+        $legacyDll = Join-Path $pluginsDir $legacyName
+        if (Test-Path $legacyDll) {
+            Remove-Item -Force $legacyDll
+            & $Log "[OK] Removed old plugin -> $legacyDll"
+        }
     }
 
     # 2) Workflow data -> <Root>\Maestro
@@ -113,7 +117,7 @@ function Install-Maestro {
     & $Log ""
     & $Log "Done. Next steps:"
     & $Log "  1. Start UCCNC"
-    & $Log "  2. Configuration -> Plugins -> enable 'JarominMaestro', check 'Call startup'"
+    & $Log "  2. Configuration -> Plugins -> enable 'UccncMaestro', check 'Call startup'"
     & $Log "  3. Restart UCCNC - the Maestro window opens"
 }
 
@@ -126,7 +130,7 @@ if (-not (Test-Path $dllSource)) {
         "This script is meant to run from inside a release package. " +
         "If you are working from the source repository, build one first:`n`n" +
         "    .\make.ps1 package`n`n" +
-        "then run Install.bat from dist\JarominMaestro\ (or just use '.\make.ps1 install' for a local developer deploy)."
+        "then run Install.bat from dist\UccncMaestro\ (or just use '.\make.ps1 install' for a local developer deploy)."
 }
 
 # --- Headless mode ---
@@ -135,7 +139,7 @@ if ($Yes) {
     if (-not (Test-UccncDir $UccncRoot)) {
         throw "'$UccncRoot' is not a valid UCCNC install (Plugininterface.dll not found). Provide a correct -UccncRoot."
     }
-    Write-Host "Jaromin CNC Maestro - unattended install -> $UccncRoot" -ForegroundColor Cyan
+    Write-Host "(uc)CNC Maestro - unattended install -> $UccncRoot" -ForegroundColor Cyan
     Install-Maestro -Root $UccncRoot -Overwrite:$OverwriteConfigs.IsPresent -Log { param($line) Write-Host $line }
     exit 0
 }
@@ -148,20 +152,20 @@ Add-Type -AssemblyName System.Drawing
 # Surface fatal problems in a dialog - the launching console is minimized,
 # so anything written to stdout/stderr would vanish unseen.
 if ($packageError) {
-    [System.Windows.Forms.MessageBox]::Show($packageError, "Jaromin CNC Maestro Setup",
+    [System.Windows.Forms.MessageBox]::Show($packageError, "(uc)CNC Maestro Setup",
         [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
     exit 1
 }
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "Jaromin CNC Maestro Setup"
+$form.Text = "(uc)CNC Maestro Setup"
 $form.Size = New-Object System.Drawing.Size(620, 560)
 $form.StartPosition = "CenterScreen"
 $form.FormBorderStyle = "FixedDialog"
 $form.MaximizeBox = $false
 
 $titleLabel = New-Object System.Windows.Forms.Label
-$titleLabel.Text = "Jaromin CNC Maestro"
+$titleLabel.Text = "(uc)CNC Maestro"
 $titleLabel.Font = New-Object System.Drawing.Font("Segoe UI", 14, [System.Drawing.FontStyle]::Bold)
 $titleLabel.Location = New-Object System.Drawing.Point(16, 12)
 $titleLabel.AutoSize = $true
