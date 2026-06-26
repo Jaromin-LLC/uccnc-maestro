@@ -1,0 +1,4 @@
+build/
+plugin/build/
+dist/
+diagnostics/

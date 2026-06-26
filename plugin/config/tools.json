@@ -1,0 +1,44 @@
+{
+  "tools": [
+    {
+      "id": 1,
+      "num": "T1",
+      "type": "Flat endmill",
+      "diameter": "1/4\"",
+      "desc": "Roughing / pocketing",
+      "image": ""
+    },
+    {
+      "id": 2,
+      "num": "T2",
+      "type": "Flat endmill",
+      "diameter": "1/8\"",
+      "desc": "Finishing / tight corners",
+      "image": ""
+    },
+    {
+      "id": 3,
+      "num": "T3",
+      "type": "Ballnose",
+      "diameter": "1/4\"",
+      "desc": "Profiles and 3D blends",
+      "image": ""
+    },
+    {
+      "id": 4,
+      "num": "T4",
+      "type": "Spot drill",
+      "diameter": "1/8\"",
+      "desc": "Hole spotting / ferrules",
+      "image": ""
+    },
+    {
+      "id": 5,
+      "num": "T5",
+      "type": "Ballnose",
+      "diameter": "1/2\"",
+      "desc": "Belly cut / large 3D scoops",
+      "image": ""
+    }
+  ]
+}

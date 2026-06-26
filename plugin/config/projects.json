@@ -1,0 +1,323 @@
+{
+  "settings": {
+    "mediaRoot": "C:\\UCCNC\\Maestro\\Media",
+    "testMode": false,
+    "useSafeZForTc": true,
+    "toolChangePos": { "x": 0, "y": 0, "z": 0, "zSafe": 0 },
+    "probe": {
+      "xPlate": 0,
+      "yPlate": 0,
+      "dist": 0,
+      "feedFast": 0,
+      "feedSlow": 0,
+      "plateThickness": 0,
+      "retractDist": 0,
+      "plateRapidZ": 0,
+      "plateZero": 0,
+      "plateRapid": false
+    }
+  },
+  "projects": [
+    {
+      "id": "S_TYPE_BODY",
+      "name": "S-Type Body",
+      "description": "Strat-style body blank — top carve, flip, back cavities, belly cut, inspect.",
+      "image": "",
+      "steps": [
+        {
+          "type": "op",
+          "label": "Rough top profile & pockets",
+          "file": "C:\\UCCNC\\Maestro\\GCode\\S_TYPE_BODY\\01-rough-top.nc",
+          "toolId": 1,
+          "minutes": 0,
+          "instructions": "Mount the body blank with the top facing up. Confirm vacuum or screw holding before starting.",
+          "photo": "",
+          "video": "",
+          "preOps": [
+            { "id": "moveToolChange", "mdi": "" },
+            { "id": "toolPrompt", "mdi": "" },
+            { "id": "autoZero", "mdi": "" }
+          ],
+          "postOps": [
+            { "id": "spindleOff", "mdi": "" },
+            { "id": "moveToolChange", "mdi": "" }
+          ]
+        },
+        {
+          "type": "gate",
+          "label": "Flip to back",
+          "file": "",
+          "toolId": 0,
+          "minutes": 0,
+          "instructions": "STOP. Flip the body onto the alignment pins (back side up). Register against the pin fence, re-check hold-down, then confirm.",
+          "photo": "",
+          "video": "",
+          "preOps": [
+            { "id": "spindleOff", "mdi": "" },
+            { "id": "parkCustom", "mdi": "" }
+          ],
+          "postOps": []
+        },
+        {
+          "type": "op",
+          "label": "Back carve & control cavities",
+          "file": "C:\\UCCNC\\Maestro\\GCode\\S_TYPE_BODY\\02-back-cavities.nc",
+          "toolId": 1,
+          "minutes": 0,
+          "instructions": "Back side up. Spring pins must be seated; vacuum zones on the flat areas only.",
+          "photo": "",
+          "video": "",
+          "preOps": [
+            { "id": "moveToolChange", "mdi": "" },
+            { "id": "toolPrompt", "mdi": "" },
+            { "id": "autoZero", "mdi": "" }
+          ],
+          "postOps": [
+            { "id": "spindleOff", "mdi": "" },
+            { "id": "moveToolChange", "mdi": "" }
+          ]
+        },
+        {
+          "type": "op",
+          "label": "Belly cut (back)",
+          "file": "C:\\UCCNC\\Maestro\\GCode\\S_TYPE_BODY\\03-belly-cut.nc",
+          "toolId": 5,
+          "minutes": 0,
+          "instructions": "1/2\" ballnose belly scoop on the back. Keep adequate stepover; watch clearance around the trem spring cavity and neck pocket.",
+          "photo": "",
+          "video": "",
+          "preOps": [
+            { "id": "moveToolChange", "mdi": "" },
+            { "id": "toolPrompt", "mdi": "" },
+            { "id": "autoZero", "mdi": "" }
+          ],
+          "postOps": [
+            { "id": "spindleOff", "mdi": "" },
+            { "id": "moveToolChange", "mdi": "" }
+          ]
+        },
+        {
+          "type": "op",
+          "label": "Detail passes (pickups, trem rout)",
+          "file": "C:\\UCCNC\\Maestro\\GCode\\S_TYPE_BODY\\04-detail-back.nc",
+          "toolId": 2,
+          "minutes": 0,
+          "instructions": "1/8\" finish pass — watch thin walls around the trem spring cavity.",
+          "photo": "",
+          "video": "",
+          "preOps": [
+            { "id": "moveToolChange", "mdi": "" },
+            { "id": "toolPrompt", "mdi": "" },
+            { "id": "autoZero", "mdi": "" }
+          ],
+          "postOps": [
+            { "id": "spindleOff", "mdi": "" },
+            { "id": "parkCustom", "mdi": "" }
+          ]
+        },
+        {
+          "type": "gate",
+          "label": "Inspect & unload",
+          "file": "",
+          "toolId": 0,
+          "minutes": 0,
+          "instructions": "STOP. Deburr cavity edges, check neck pocket depth and trem rout. Unload when satisfied.",
+          "photo": "",
+          "video": "",
+          "preOps": [
+            { "id": "spindleOff", "mdi": "" }
+          ],
+          "postOps": []
+        }
+      ]
+    },
+    {
+      "id": "T_TYPE_BODY",
+      "name": "T-Type Body",
+      "description": "Tele-style body blank — top carve, flip, back routes, string ferrules.",
+      "image": "",
+      "steps": [
+        {
+          "type": "op",
+          "label": "Top profile & neck pocket",
+          "file": "C:\\UCCNC\\Maestro\\GCode\\T_TYPE_BODY\\01-top-profile.nc",
+          "toolId": 1,
+          "minutes": 0,
+          "instructions": "Mount blank top-up. Confirm the neck pocket alignment against the fixture stop.",
+          "photo": "",
+          "video": "",
+          "preOps": [
+            { "id": "moveToolChange", "mdi": "" },
+            { "id": "toolPrompt", "mdi": "" },
+            { "id": "autoZero", "mdi": "" }
+          ],
+          "postOps": [
+            { "id": "spindleOff", "mdi": "" },
+            { "id": "moveToolChange", "mdi": "" }
+          ]
+        },
+        {
+          "type": "gate",
+          "label": "Flip to back",
+          "file": "",
+          "toolId": 0,
+          "minutes": 0,
+          "instructions": "STOP. Flip onto alignment pins (back up). Keep the bridge area flat on the spoilboard pads.",
+          "photo": "",
+          "video": "",
+          "preOps": [
+            { "id": "spindleOff", "mdi": "" },
+            { "id": "parkCustom", "mdi": "" }
+          ],
+          "postOps": []
+        },
+        {
+          "type": "op",
+          "label": "Back routes & control cavity",
+          "file": "C:\\UCCNC\\Maestro\\GCode\\T_TYPE_BODY\\02-back-routes.nc",
+          "toolId": 1,
+          "minutes": 0,
+          "instructions": "Back side up. Re-probe will set Z on the registered back face.",
+          "photo": "",
+          "video": "",
+          "preOps": [
+            { "id": "moveToolChange", "mdi": "" },
+            { "id": "toolPrompt", "mdi": "" },
+            { "id": "autoZero", "mdi": "" }
+          ],
+          "postOps": [
+            { "id": "spindleOff", "mdi": "" },
+            { "id": "moveToolChange", "mdi": "" }
+          ]
+        },
+        {
+          "type": "op",
+          "label": "String ferrule holes",
+          "file": "C:\\UCCNC\\Maestro\\GCode\\T_TYPE_BODY\\03-ferrule-holes.nc",
+          "toolId": 4,
+          "minutes": 0,
+          "instructions": "Spot drill / ferrule holes through the back. Confirm spoilboard clearance below.",
+          "photo": "",
+          "video": "",
+          "preOps": [
+            { "id": "moveToolChange", "mdi": "" },
+            { "id": "toolPrompt", "mdi": "" },
+            { "id": "autoZero", "mdi": "" }
+          ],
+          "postOps": [
+            { "id": "spindleOff", "mdi": "" },
+            { "id": "parkCustom", "mdi": "" }
+          ]
+        },
+        {
+          "type": "gate",
+          "label": "Inspect & unload",
+          "file": "",
+          "toolId": 0,
+          "minutes": 0,
+          "instructions": "STOP. Check ferrule depth, neck pocket, and bridge plate area. Deburr and unload.",
+          "photo": "",
+          "video": "",
+          "preOps": [
+            { "id": "spindleOff", "mdi": "" }
+          ],
+          "postOps": []
+        }
+      ]
+    },
+    {
+      "id": "C_SHAPE_NECK",
+      "name": "C-Shape Neck",
+      "description": "Modern C-profile neck — rough profile, flip, truss rod & back carve, finish pass.",
+      "image": "",
+      "steps": [
+        {
+          "type": "op",
+          "label": "Rough neck profile (top)",
+          "file": "C:\\UCCNC\\Maestro\\GCode\\C_SHAPE_NECK\\01-rough-profile.nc",
+          "toolId": 1,
+          "minutes": 0,
+          "instructions": "Mount the neck blank per your fixture (headstock against the stop). Confirm hold-down before starting.",
+          "photo": "",
+          "video": "",
+          "preOps": [
+            { "id": "moveToolChange", "mdi": "" },
+            { "id": "toolPrompt", "mdi": "" },
+            { "id": "autoZero", "mdi": "" }
+          ],
+          "postOps": [
+            { "id": "spindleOff", "mdi": "" },
+            { "id": "moveToolChange", "mdi": "" }
+          ]
+        },
+        {
+          "type": "gate",
+          "label": "Flip onto pins",
+          "file": "",
+          "toolId": 0,
+          "minutes": 0,
+          "instructions": "STOP. Flip the neck onto alignment pins. Headstock must register against the stop; confirm hold-down before continuing.",
+          "photo": "",
+          "video": "",
+          "preOps": [
+            { "id": "spindleOff", "mdi": "" },
+            { "id": "parkCustom", "mdi": "" }
+          ],
+          "postOps": []
+        },
+        {
+          "type": "op",
+          "label": "Truss rod channel & headstock back",
+          "file": "C:\\UCCNC\\Maestro\\GCode\\C_SHAPE_NECK\\02-truss-rod-back.nc",
+          "toolId": 2,
+          "minutes": 0,
+          "instructions": "1/8\" bit for truss rod channel and headstock back carve. Watch entry at the nut end.",
+          "photo": "",
+          "video": "",
+          "preOps": [
+            { "id": "moveToolChange", "mdi": "" },
+            { "id": "toolPrompt", "mdi": "" },
+            { "id": "autoZero", "mdi": "" }
+          ],
+          "postOps": [
+            { "id": "spindleOff", "mdi": "" },
+            { "id": "moveToolChange", "mdi": "" }
+          ]
+        },
+        {
+          "type": "op",
+          "label": "Finish C-profile (ballnose)",
+          "file": "C:\\UCCNC\\Maestro\\GCode\\C_SHAPE_NECK\\03-finish-profile.nc",
+          "toolId": 3,
+          "minutes": 0,
+          "instructions": "Light finish pass on the C-profile. Leave extra material at the tenon if this neck will be fit later.",
+          "photo": "",
+          "video": "",
+          "preOps": [
+            { "id": "moveToolChange", "mdi": "" },
+            { "id": "toolPrompt", "mdi": "" },
+            { "id": "autoZero", "mdi": "" }
+          ],
+          "postOps": [
+            { "id": "spindleOff", "mdi": "" },
+            { "id": "parkCustom", "mdi": "" }
+          ]
+        },
+        {
+          "type": "gate",
+          "label": "Inspect & unload",
+          "file": "",
+          "toolId": 0,
+          "minutes": 0,
+          "instructions": "STOP. Check truss rod channel depth, profile symmetry, and tenon dimensions. Unload for fretboard gluing or further ops.",
+          "photo": "",
+          "video": "",
+          "preOps": [
+            { "id": "spindleOff", "mdi": "" }
+          ],
+          "postOps": []
+        }
+      ]
+    }
+  ]
+}
