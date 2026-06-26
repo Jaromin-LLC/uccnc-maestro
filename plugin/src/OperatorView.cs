@@ -890,12 +890,16 @@ namespace Plugins
                 Font = new Font("Segoe UI", 14F),
                 Visible = false
             };
+            var video = new VideoPlayerControl { Dock = DockStyle.Fill, Visible = false };
             var content = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(30, 30, 30) };
             content.Controls.Add(note);
+            content.Controls.Add(video);
             content.Controls.Add(photoBox);
 
             Action showPhoto = () =>
             {
+                video.StopAndRelease();
+                video.Visible = false;
                 var img = ImageUtil.LoadOriented(ResolveMediaPath(step.photo));
                 if (img == null)
                 {
@@ -908,14 +912,23 @@ namespace Plugins
                 if (old != null) old.Dispose();
                 note.Visible = false; photoBox.Visible = true;
             };
+            // Play in-app via the embedded MediaElement. On decode failure (e.g. an HEVC
+            // recording with no HEVC extension installed) fall back to the OS player.
             Action playVideo = () =>
             {
+                photoBox.Visible = false;
+                note.Visible = false;
+                video.Visible = true;
+                video.BringToFront();
+                video.Play(ResolveMediaPath(step.video));
+            };
+            video.PlaybackFailed += msg =>
+            {
+                video.Visible = false;
+                note.Text = "Couldn't play this video in-app:\n" + msg +
+                            "\n\nOpening in your media player\u2026";
+                note.Visible = true;
                 PlayStepVideo(step);
-                if (!hasPhoto)
-                {
-                    note.Text = "Video opened in your media player.";
-                    note.Visible = true; photoBox.Visible = false;
-                }
             };
 
             var bar = new FlowLayoutPanel
@@ -930,17 +943,32 @@ namespace Plugins
             photoBtn.Click += (s, e) => showPhoto();
             var videoBtn = MakeMediaButton("Video", Color.FromArgb(70, 70, 70), true, hasVideo);
             videoBtn.Click += (s, e) => playVideo();
-            var closeBtn = MakeButton("CLOSE", Color.FromArgb(120, 120, 120), 14F, 52);
-            closeBtn.Width = 120;
+            var externalBtn = MakeButton("Open Externally", Color.FromArgb(110, 110, 110), 13F, 52);
+            externalBtn.AutoSize = true;
+            externalBtn.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            externalBtn.MinimumSize = new Size(150, 52);
+            externalBtn.Padding = new Padding(14, 0, 14, 0);
+            externalBtn.Margin = new Padding(0, 0, 12, 0);
+            externalBtn.Enabled = hasVideo;
+            externalBtn.Click += (s, e) => PlayStepVideo(step);
+            var closeBtn = MakeButton("Close", Color.FromArgb(120, 120, 120), 14F, 52);
+            closeBtn.AutoSize = true;
+            closeBtn.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            closeBtn.MinimumSize = new Size(110, 52);
+            closeBtn.Padding = new Padding(16, 0, 16, 0);
             closeBtn.Margin = new Padding(0, 0, 0, 0);
             closeBtn.Click += (s, e) => dlg.Close();
 
             bar.Controls.Add(photoBtn);
             bar.Controls.Add(videoBtn);
+            bar.Controls.Add(externalBtn);
             bar.Controls.Add(closeBtn);
 
             dlg.Controls.Add(content);
             dlg.Controls.Add(bar);
+
+            // Always release the file handle the embedded player holds when the dialog closes.
+            dlg.FormClosing += (s, e) => video.StopAndRelease();
 
             dlg.Shown += (s, e) =>
             {
@@ -953,12 +981,14 @@ namespace Plugins
         private static Button MakeMediaButton(string text, Color back, bool video, bool enabled)
         {
             var b = MakeButton(text, back, 14F, 52);
-            b.Width = 150;
+            b.AutoSize = true;
+            b.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            b.MinimumSize = new Size(120, 52);
             b.Image = MakeIconBitmap(24, video, Color.White);
             b.ImageAlign = ContentAlignment.MiddleLeft;
             b.TextAlign = ContentAlignment.MiddleRight;
             b.TextImageRelation = TextImageRelation.ImageBeforeText;
-            b.Padding = new Padding(8, 0, 12, 0);
+            b.Padding = new Padding(10, 0, 16, 0);
             b.Margin = new Padding(0, 0, 12, 0);
             b.Enabled = enabled;
             return b;

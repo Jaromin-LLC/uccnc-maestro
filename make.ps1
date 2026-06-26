@@ -93,6 +93,24 @@ namespace Plugins
         "System.Windows.Forms.dll",
         "System.Web.Extensions.dll"
     )
+
+    # WPF assemblies (for the embedded MediaElement video player, hosted in WinForms via
+    # ElementHost). These ship with .NET Framework - nothing extra is added to the package,
+    # the build just references the in-box runtime DLLs next to csc.exe.
+    $fwDir = Split-Path $csc -Parent
+    $wpfDir = Join-Path $fwDir "WPF"
+    $wpfRefs = @(
+        (Join-Path $wpfDir "PresentationCore.dll"),
+        (Join-Path $wpfDir "PresentationFramework.dll"),
+        (Join-Path $wpfDir "WindowsBase.dll"),
+        (Join-Path $wpfDir "WindowsFormsIntegration.dll"),
+        (Join-Path $fwDir  "System.Xaml.dll")
+    )
+    foreach ($wpfRef in $wpfRefs) {
+        if (-not (Test-Path $wpfRef)) { throw "Required WPF assembly not found: $wpfRef" }
+        $refs += $wpfRef
+    }
+
     $refArgs = $refs | ForEach-Object { "/reference:`"$_`"" }
     $srcArgs = @($sourceFiles | ForEach-Object { "`"$($_.FullName)`"" })
     $srcArgs += "`"$buildInfoPath`""
