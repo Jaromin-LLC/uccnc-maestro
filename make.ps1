@@ -12,6 +12,8 @@
               NEVER overwritten.
     package   build, then stage the end-user installer payload under dist\
               and zip it for handoff (dist\UccncMaestro-<Version>.zip).
+    net-setup Reserve the HTTP URL ACL and open the firewall for the companion
+              port so phones on the LAN can connect (self-elevates via UAC).
     clean     Delete build output (plugin\build) and dist\.
 
 .PARAMETER Target
@@ -36,10 +38,11 @@
 #>
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("build", "install", "package", "clean")]
+    [ValidateSet("build", "install", "package", "clean", "testhost", "net-setup")]
     [string]$Target = "build",
     [string]$UccncRoot = "C:\UCCNC",
     [string]$Version = "1.0.0",
+    [int]$Port = 8723,
     [switch]$SkipBuild
 )
 
@@ -132,6 +135,22 @@ namespace Plugins
         }
     }
 
+    # Embed the companion PWA (app\) so the mobile client ships inside the DLL and is
+    # served by MaestroServer via EmbeddedWebAssets. Resource names flatten the path:
+    # app\icons\icon.svg -> UccncMaestro.app.icons.icon.svg
+    $appDir = Join-Path $RepoRoot "app"
+    if (Test-Path $appDir) {
+        $appFiles = Get-ChildItem -Path $appDir -Recurse -File
+        foreach ($f in $appFiles) {
+            $rel = $f.FullName.Substring($appDir.Length).TrimStart('\', '/')
+            $resName = "UccncMaestro.app." + ($rel -replace '[\\/]', '.')
+            $resArgs += "/resource:`"$($f.FullName)`",$resName"
+        }
+        Write-Host "Embedding $($appFiles.Count) PWA asset(s) from app\"
+    } else {
+        Write-Host "[WARN] app\ not found; companion PWA will not be embedded." -ForegroundColor Yellow
+    }
+
     $outPath = Join-Path $BuildDir $DllName
     if (Test-Path $outPath) { Remove-Item $outPath -Force }
 
@@ -183,6 +202,7 @@ function Invoke-Install {
     Write-Host "  1. Start UCCNC -> Configuration -> Plugins -> enable UccncMaestro, check Call startup"
     Write-Host "  2. Restart UCCNC - the Maestro window opens"
     Write-Host "  3. One-time machine setup (probing / tool change): docs\M6_SETUP.md"
+    Write-Host "  4. To connect phones over Wi-Fi, run once:  .\make.ps1 net-setup"
 }
 
 function Invoke-Package {
@@ -229,6 +249,97 @@ function Invoke-Package {
     Write-Host "Hand the zip to the target machine, unzip it, and run Install.bat."
 }
 
+function Invoke-TestHost {
+    # Compiles a Forms-free subset (Models + companion core + simulator) into a console
+    # exe and runs it, serving the PWA straight from app\ on localhost. Lets the whole
+    # API + mobile UI be exercised without UCCNC or a real machine.
+    $csc = Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+    if (-not (Test-Path $csc)) { throw "csc.exe not found at $csc" }
+
+    New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
+    $exeOut = Join-Path $BuildDir "UccncMaestro.TestHost.exe"
+
+    # A previously launched test host keeps the exe locked; stop it before rebuilding.
+    Get-Process -Name "UccncMaestro.TestHost" -ErrorAction SilentlyContinue | ForEach-Object {
+        Write-Host "Stopping running test host (PID $($_.Id))..."
+        try { $_.Kill(); $_.WaitForExit(3000) } catch { }
+    }
+    if (Test-Path $exeOut) {
+        $removed = $false
+        for ($attempt = 1; $attempt -le 5; $attempt++) {
+            try { Remove-Item $exeOut -Force -ErrorAction Stop; $removed = $true; break }
+            catch { Start-Sleep -Milliseconds 400 }
+        }
+        if (-not $removed) { throw "Could not replace $exeOut - it is still in use. Close any running test host and retry." }
+    }
+
+    $sources = @(
+        (Join-Path $SrcDir "Models.cs"),
+        (Join-Path $SrcDir "Companion\CompanionSettings.cs"),
+        (Join-Path $SrcDir "Companion\StatusSnapshot.cs"),
+        (Join-Path $SrcDir "Companion\IMaestroController.cs"),
+        (Join-Path $SrcDir "Companion\WebAssets.cs"),
+        (Join-Path $SrcDir "Companion\MaestroServer.cs"),
+        (Join-Path $SrcDir "Companion\SimulatedMaestroController.cs"),
+        (Join-Path $RepoRoot "tools\testhost\Program.cs")
+    )
+    foreach ($s in $sources) { if (-not (Test-Path $s)) { throw "Missing source: $s" } }
+
+    $refs = @("System.dll", "System.Core.dll", "System.Web.Extensions.dll")
+    $refArgs = $refs | ForEach-Object { "/reference:$_" }
+    $srcArgs = $sources | ForEach-Object { "`"$_`"" }
+
+    Write-Host "Compiling UccncMaestro.TestHost.exe ..."
+    & $csc /nologo /target:exe /platform:anycpu /out:"$exeOut" @refArgs @srcArgs
+    if ($LASTEXITCODE -ne 0) { throw "Test host build failed." }
+
+    Write-Host "[OK] Built $exeOut" -ForegroundColor Green
+    Write-Host ""
+    & $exeOut --root "$RepoRoot" --port $Port
+}
+
+function Invoke-NetSetup {
+    # One-time machine setup so phones on the LAN can reach the companion server:
+    #   1) reserve the HTTP URL ACL  -> lets the (non-admin) UCCNC plugin bind http://+:PORT/
+    #   2) open an inbound firewall rule for the port (Private + Domain profiles)
+    # Requires elevation; self-elevates via UAC if not already admin.
+    $port = $Port
+    $prefix = "http://+:$port/"
+    $ruleName = "UccncMaestro Companion (TCP $port)"
+
+    $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    if (-not $isAdmin) {
+        Write-Host "Administrator rights are required; requesting elevation (UAC)..." -ForegroundColor Yellow
+        $psArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-NoExit", "-File", "`"$PSCommandPath`"", "net-setup", "-Port", "$port")
+        try { Start-Process -FilePath "powershell.exe" -Verb RunAs -ArgumentList $psArgs } catch { throw "Elevation cancelled or failed." }
+        Write-Host "An elevated window was opened to finish the setup."
+        return
+    }
+
+    Write-Host "Configuring LAN access for the companion server on port $port..." -ForegroundColor Cyan
+
+    # URL ACL: grant the well-known 'Everyone' SID (WD) so any local account running
+    # UCCNC can bind the prefix. Recreate to stay idempotent.
+    & netsh http delete urlacl url=$prefix 2>$null | Out-Null
+    & netsh http add urlacl url=$prefix sddl="D:(A;;GX;;;WD)"
+    if ($LASTEXITCODE -ne 0) { throw "Failed to reserve URL ACL for $prefix" }
+    Write-Host "[OK] Reserved URL ACL $prefix" -ForegroundColor Green
+
+    # Firewall: inbound TCP on the port for Private + Domain networks. Recreate to stay idempotent.
+    & netsh advfirewall firewall delete rule name="$ruleName" 2>$null | Out-Null
+    & netsh advfirewall firewall add rule name="$ruleName" dir=in action=allow protocol=TCP localport=$port profile=private,domain
+    if ($LASTEXITCODE -ne 0) { throw "Failed to add firewall rule for port $port" }
+    Write-Host "[OK] Allowed inbound TCP $port (Private/Domain)" -ForegroundColor Green
+
+    $ips = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+        Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' }
+    Write-Host ""
+    Write-Host "Done. Restart UCCNC, then add the machine on your phone using:" -ForegroundColor Green
+    foreach ($ip in $ips) { Write-Host ("  http://{0}:{1}/" -f $ip.IPAddress, $port) }
+    Write-Host ""
+    Write-Host "Note: phone and PC must be on the same Wi-Fi, and that network must be 'Private'."
+}
+
 function Invoke-Clean {
     foreach ($dir in $BuildDir, $DistRoot) {
         if (Test-Path $dir) {
@@ -239,9 +350,11 @@ function Invoke-Clean {
 }
 
 switch ($Target) {
-    "build"   { Invoke-Build }
-    "install" { Invoke-Install }
-    "package" { Invoke-Package }
-    "clean"   { Invoke-Clean }
+    "build"    { Invoke-Build }
+    "install"  { Invoke-Install }
+    "package"  { Invoke-Package }
+    "clean"    { Invoke-Clean }
+    "testhost" { Invoke-TestHost }
+    "net-setup" { Invoke-NetSetup }
 }
 exit 0

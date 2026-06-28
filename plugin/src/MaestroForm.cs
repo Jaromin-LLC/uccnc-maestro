@@ -3,6 +3,7 @@ using System.Drawing;
 using System.IO;
 using System.Threading;
 using System.Windows.Forms;
+using Plugins.Companion;
 
 namespace Plugins
 {
@@ -12,12 +13,18 @@ namespace Plugins
         private readonly TabControl _tabs;
         private readonly TabPage _operatorPage;
         private readonly TabPage _adminPage;
+        private readonly TabPage _mobilePage;
         private readonly OperatorView _operatorView;
         private readonly AdminView _adminView;
         private readonly Label _liveStatusLabel;
         private readonly Label _liveMachineLabel;
         private bool _mustClose;
         private IntPtr _uccncHandle = IntPtr.Zero;
+
+        private CompanionSettings _companionSettings;
+        private PluginMaestroController _companionController;
+        private MaestroServer _companionServer;
+        private CompanionView _companionView;
 
         public WorkflowEngine Engine { get; private set; }
 
@@ -69,8 +76,14 @@ namespace Plugins
             _adminPage.Controls.Add(_adminView);
             _adminView.Dock = DockStyle.Fill;
 
+            _companionSettings = CompanionSettingsStore.Load(CompanionPaths.SettingsFile, "CNC");
+            _companionView = new CompanionView(_companionSettings, () => _companionServer, ApplyCompanionSettings);
+            _mobilePage = new TabPage("Mobile") { Padding = new Padding(8) };
+            _mobilePage.Controls.Add(_companionView);
+
             _tabs.TabPages.Add(opPage);
             _tabs.TabPages.Add(_adminPage);
+            _tabs.TabPages.Add(_mobilePage);
 
             // Lock the Admin tab while an operation is running.
             _tabs.Selecting += Tabs_Selecting;
@@ -165,6 +178,49 @@ namespace Plugins
             CheckForIllegalCrossThreadCalls = false;
             _operatorView.ReloadProjects();
             _adminView.LoadDocument(Engine.Document);
+            StartCompanion();
+        }
+
+        /// <summary>Marshals an action onto the UI thread (used by the companion bridge).</summary>
+        public void InvokeUi(Action action)
+        {
+            if (action == null) return;
+            if (IsDisposed) { action(); return; }
+            if (InvokeRequired) Invoke(action);
+            else action();
+        }
+
+        private void StartCompanion()
+        {
+            try
+            {
+                if (_companionSettings == null) return;
+                CompanionSettingsStore.Save(CompanionPaths.SettingsFile, _companionSettings);
+                if (!_companionSettings.enabled) { if (_companionView != null) _companionView.RefreshDisplay(); return; }
+
+                _companionController = new PluginMaestroController(_plugin, Engine, this, _companionSettings, InvokeUi);
+                var assets = new EmbeddedWebAssets(System.Reflection.Assembly.GetExecutingAssembly(), "UccncMaestro.app");
+                _companionServer = new MaestroServer(_companionController, _companionSettings, assets,
+                    msg => { try { _plugin.UC.AddStatusmessage("[Companion] " + msg); } catch { } },
+                    CompanionPaths.TokenStoreFile);
+                _companionServer.BuildId = BuildInfo.Id;
+                _companionServer.Start();
+            }
+            catch { }
+            if (_companionView != null) _companionView.RefreshDisplay();
+        }
+
+        private void StopCompanion()
+        {
+            try { if (_companionServer != null) _companionServer.Stop(); } catch { }
+            _companionServer = null;
+        }
+
+        private void ApplyCompanionSettings()
+        {
+            CompanionSettingsStore.Save(CompanionPaths.SettingsFile, _companionSettings);
+            StopCompanion();
+            StartCompanion();
         }
 
         /// <summary>
@@ -225,6 +281,7 @@ namespace Plugins
         {
             _plugin.loopstop = true;
             while (_plugin.loopworking) Thread.Sleep(10);
+            StopCompanion();
             _mustClose = true;
             try { Invoke(new MethodInvoker(Close)); } catch { }
         }

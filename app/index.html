@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0e1116" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>CNC Maestro Remote</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icons/icon.svg" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- Top bar -->
+  <header id="topbar">
+    <img class="brandmark" src="icons/mark.png" alt="CNC Maestro" />
+    <button id="machineBtn" class="machine-btn">
+      <span class="machine-stack">
+        <span class="wordmark">CNC&nbsp;Maestro</span>
+        <span class="machine-line"><span id="connDot" class="dot"></span><span id="machineName">No machine</span><span class="chevron">&#9662;</span></span>
+      </span>
+    </button>
+    <button id="estopBtn" class="estop-mini" title="E-STOP">E&#8209;STOP</button>
+  </header>
+
+  <!-- Disconnected banner -->
+  <div id="banner" class="banner hidden"></div>
+
+  <!-- Screens -->
+  <main id="main">
+    <!-- JOG -->
+    <section id="screen-jog" class="screen">
+      <!-- DRO instrument cluster -->
+      <div id="dro" class="dro-cluster"></div>
+
+      <div id="camWrap" class="cam hidden"><img id="camImg" alt="camera" /></div>
+
+      <!-- Jog pad: the X/Y cross dominates; Z is an equal-sized side column -->
+      <div class="jogpad" id="jogpad">
+        <button class="jbtn" data-axis="Y" data-dir="1"  style="grid-area:yp" aria-label="Y plus">Y+</button>
+        <button class="jbtn" data-axis="X" data-dir="-1" style="grid-area:xm" aria-label="X minus">X&minus;</button>
+        <button class="jbtn" data-axis="X" data-dir="1"  style="grid-area:xp" aria-label="X plus">X+</button>
+        <button class="jbtn" data-axis="Y" data-dir="-1" style="grid-area:ym" aria-label="Y minus">Y&minus;</button>
+        <button class="jbtn zcol" data-axis="Z" data-dir="1"  style="grid-area:zp" aria-label="Z plus">Z+</button>
+        <button class="jbtn zcol" data-axis="Z" data-dir="-1" style="grid-area:zm" aria-label="Z minus">Z&minus;</button>
+      </div>
+
+      <!-- Secondary rotary axis (most machines don't have one) -->
+      <div class="aux-axis" id="auxAxis">
+        <span class="lbl">A&nbsp;AXIS</span>
+        <button class="jbtn aux" data-axis="A" data-dir="-1" aria-label="A minus">A&minus;</button>
+        <button class="jbtn aux" data-axis="A" data-dir="1" aria-label="A plus">A+</button>
+      </div>
+
+      <!-- Mode + step size -->
+      <div class="console-controls">
+        <div class="ctl-block">
+          <div class="ctl-label">MODE</div>
+          <div id="modeSeg" class="seg">
+            <button data-mode="cont">CONT</button>
+            <button data-mode="step">STEP</button>
+          </div>
+        </div>
+        <div class="ctl-block" id="stepBlock">
+          <div class="ctl-label">STEP (<span id="stepUnit">mm</span>)</div>
+          <div id="stepChips" class="seg"></div>
+        </div>
+      </div>
+
+      <!-- Jog feed + spindle sliders -->
+      <div class="ctl-block">
+        <div class="ctl-label">JOG FEED <span id="feedVal" class="ctl-hint"></span></div>
+        <input id="feedSlider" type="range" min="100" max="4000" step="100" value="1500" />
+      </div>
+      <div class="ctl-block">
+        <div class="ctl-label">SPINDLE <span id="spindleVal" class="ctl-hint"></span></div>
+        <div class="spindle-row">
+          <input id="spindleSlider" type="range" min="0" max="24000" step="500" value="12000" />
+          <button id="spindleToggle" class="spin-btn">OFF</button>
+        </div>
+      </div>
+
+      <!-- Machine actions -->
+      <div class="action-chips three">
+        <button class="chip-act hold" data-act="home-all"><span class="ci">&#8962;</span>Home All</button>
+        <button class="chip-act hold" data-act="autozero"><span class="ci">&#10515;</span>Auto&#8209;Zero</button>
+        <button class="chip-act hold" data-act="park-custom"><span class="ci">&#9209;</span>Park</button>
+      </div>
+    </section>
+
+    <!-- STATUS -->
+    <section id="screen-status" class="screen hidden">
+      <div id="statusCard" class="card"></div>
+      <div id="promptCard" class="card prompt hidden"></div>
+      <div id="camWrap2" class="cam hidden"><img id="camImg2" alt="camera" /></div>
+    </section>
+
+    <!-- PROJECTS -->
+    <section id="screen-projects" class="screen hidden">
+      <select id="projectSelect" class="project-select"></select>
+      <div id="stepList" class="step-list"></div>
+      <div class="grid-actions">
+        <button class="act primary hold" data-act="run-all">Run All</button>
+        <button class="act hold" data-act="reset">Reset</button>
+        <button class="act danger hold" data-act="abort">Abort</button>
+      </div>
+    </section>
+
+    <!-- MACHINES -->
+    <section id="screen-machines" class="screen hidden">
+      <h2>Machines</h2>
+      <div id="machineList" class="machine-list"></div>
+      <button id="addMachineBtn" class="act primary full">+ Add Machine</button>
+    </section>
+  </main>
+
+  <!-- Persistent safety bar -->
+  <div id="safetyBar">
+    <button id="feedHoldBtn" class="feedhold">FEED HOLD</button>
+    <button id="resumeBtn" class="resume">RESUME</button>
+    <button id="estopBig" class="estop-big">E&#8209;STOP</button>
+  </div>
+
+  <!-- Bottom tabs -->
+  <nav id="tabs">
+    <button class="tab active" data-screen="jog">Jog</button>
+    <button class="tab" data-screen="status">Status</button>
+    <button class="tab" data-screen="projects">Projects</button>
+    <button class="tab" data-screen="machines">Machines</button>
+  </nav>
+
+  <!-- Modal host -->
+  <div id="modal" class="modal hidden"><div id="modalCard" class="modal-card"></div></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

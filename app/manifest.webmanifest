@@ -1,0 +1,14 @@
+{
+  "name": "CNC Maestro Remote",
+  "short_name": "Maestro",
+  "description": "Local-network remote for UCCNC Maestro: jog, status, and job progress.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0e1116",
+  "theme_color": "#0e1116",
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

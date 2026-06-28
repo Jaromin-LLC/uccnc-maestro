@@ -12,4 +12,7 @@ Existing `projects.json` / `tools.json` in `C:\UCCNC\Maestro` are never overwrit
 
 M6 / probing setup: [M6_SETUP.md](M6_SETUP.md).
 
+Mobile companion over Wi‑Fi: run `.\make.ps1 net-setup` once (opens the URL ACL + firewall
+for the companion port) and follow [companion/REMOTE_APP.md](companion/REMOTE_APP.md).
+
 The installer leaves your active UCCNC screenset unchanged. It removes legacy screenset artifacts from earlier builds if present (the old screenset, tab images, and macros M20797–M20886).

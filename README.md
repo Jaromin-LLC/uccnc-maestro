@@ -11,6 +11,7 @@ Maestro runs in its own window alongside your existing UCCNC screenset, so you c
 - **Automatic per-op sequence**: move to tool-change → tool install confirm → auto zero → load file → cycle start → return to tool-change
 - **Gate steps** (flip/register): pause with instructions until operator confirms
 - **Admin tab**: CRUD projects/steps, g-code file picker, photo/video attach, pre/post auto-ops, test mode
+- **Mobile companion**: monitor and control the machine from a phone on the shop Wi‑Fi (jog, auto-zero, park, spindle, run jobs, confirm prompts, E‑STOP) — a zero-install PWA served by the plugin. See [docs/companion/REMOTE_APP.md](docs/companion/REMOTE_APP.md).
 - Progress persists in `C:\UCCNC\Maestro\state.json` across restarts
 
 ## Requirements
@@ -35,7 +36,9 @@ cd uccnc-maestro
 .\make.ps1            # build   - compile plugin\src\*.cs -> plugin\build\UccncMaestro.dll
 .\make.ps1 install    # build + deploy DLL to C:\UCCNC + seed configs (first install only)
 .\make.ps1 package    # build + create dist\UccncMaestro-<version>.zip for shop PCs
+.\make.ps1 net-setup  # one-time: open URL ACL + firewall so phones can reach the companion
 .\make.ps1 clean      # delete plugin\build and dist
+.\make.ps1 testhost   # run the companion server + simulator on localhost (no UCCNC)
 ```
 
 (`make.bat` is a double-click/cmd wrapper for the same targets: `make install`.)
@@ -77,6 +80,9 @@ Compiles the DLL, deploys it to `C:\UCCNC\Plugins`, and seeds the `Maestro` conf
 
 One-time machine setup (probing / tool-change positions): [docs/M6_SETUP.md](docs/M6_SETUP.md).
 
+To use the mobile companion over Wi‑Fi, run `.\make.ps1 net-setup` once (opens the URL ACL +
+firewall), then follow [docs/companion/REMOTE_APP.md](docs/companion/REMOTE_APP.md).
+
 ## How the installer is built
 
 ```
@@ -92,8 +98,11 @@ installer\Install.ps1 / .bat  -----+      (+ Install.ps1, Install.bat, README.tx
 
 | Path | Purpose |
 |------|---------|
-| `make.ps1` / `make.bat` | Single entry point: `build`, `install`, `package`, `clean` |
+| `make.ps1` / `make.bat` | Single entry point: `build`, `install`, `package`, `net-setup`, `testhost`, `clean` |
 | `plugin/src/` | Plugin source (WinForms UI + workflow engine) |
+| `plugin/src/Companion/` | Mobile companion server (HTTP/SSE) + controllers |
+| `app/` | Companion PWA (HTML/CSS/JS), embedded into the DLL at build time |
+| `tools/testhost/` | Console host: companion server + simulator on localhost |
 | `plugin/config/projects.json` | Seed workflow config (v3 schema) |
 | `plugin/config/tools.json` | Seed tool library |
 | `installer/Install.ps1` | Graphical target-machine installer (shipped in the zip, no build) |
@@ -101,6 +110,7 @@ installer\Install.ps1 / .bat  -----+      (+ Install.ps1, Install.bat, README.tx
 | `docs/M6_SETUP.md` | Tool setter / auto-zero setup |
 | `docs/ADDING_PRODUCTS.md` | Adding projects via the Admin tab |
 | `docs/DEPLOYMENT.md` | Deployment notes |
+| `docs/companion/` | Mobile companion: [user guide](docs/companion/REMOTE_APP.md), overview, API, security, UX, features |
 
 ## Runtime paths
 
