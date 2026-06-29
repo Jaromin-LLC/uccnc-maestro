@@ -2,7 +2,7 @@
 REM (uc)CNC Maestro - installer launcher
 REM Double-click this file to open the setup window.
 REM For an unattended install from a terminal:
-REM   Install.bat -UccncRoot "D:\UCCNC" -Yes [-OverwriteConfigs]
+REM   Install.bat -UccncRoot "D:\UCCNC" -Yes [-OverwriteConfigs] [-EnableLan [-Port 8723]]
 
 if "%~1"=="" (
     start "" /min powershell -NoProfile -ExecutionPolicy Bypass -STA -File "%~dp0Install.ps1"

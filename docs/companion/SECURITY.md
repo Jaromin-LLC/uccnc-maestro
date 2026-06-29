@@ -12,9 +12,13 @@ This app can move a CNC machine over WiFi. The model below balances "useful in a
   A future option may add a self-signed cert + pinning; not in MVP.
 - On Windows, `HttpListener` on a non-localhost prefix requires a one-time URL ACL and an
   inbound firewall rule. Run **`.\make.ps1 net-setup`** (self-elevating) to reserve
-  `http://+:<port>/` for `Everyone` (SID `WD`) and open the port for Private/Domain networks.
+  `http://+:<port>/` for `Everyone` (SID `WD`) and open the port for all network profiles.
   If the reservation is missing, the server falls back to `http://localhost:<port>` and logs
   the reason. See [REMOTE_APP.md](REMOTE_APP.md#one-time-setup-on-the-shop-pc).
+- **Auto-discovery** uses an inbound **UDP** rule on the same port. The beacon only
+  advertises non-sensitive identity (machine id/name, port, version) and is purely
+  informational — discovery never moves the machine or bypasses pairing. It's optional;
+  without the UDP rule, machines just won't auto-appear and are added by IP.
 
 ## Pairing & tokens
 

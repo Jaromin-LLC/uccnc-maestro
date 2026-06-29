@@ -7,8 +7,11 @@ scoped to a local-network shop tool.
 ## MVP (this effort)
 
 - [x] Multi-machine: add / remove / rename / switch, with per-machine units (mm / SAE).
+- [x] LAN auto-discovery: UDP beacon + `/api/peers`; "Found on your network" tap-to-connect
+      list with add-by-IP fallback.
 - [x] Live status: DROs (X/Y/Z/A work + machine), homed flags, cycle/feed-hold/alarm state.
 - [x] Jog: continuous (default, dead-man) + step, selectable mode; units-aware step size + feed.
+      The JOG FEED slider sets the speed for both modes (continuous uses UCCNC jog feedrate field 913).
 - [x] Home all, Park (G28/G30/custom), Auto-zero, manual spindle on/off + RPM.
 - [x] Feed hold / resume / stop / E-STOP (stop + E-STOP always available).
 - [x] Maestro projects: pick, Run All / Run Step / Reset / Abort.
@@ -31,7 +34,9 @@ scoped to a local-network shop tool.
 5. **Completion time-of-day** readout and per-step ETAs.
 6. **Job history / log** - recent runs with durations and outcome.
 7. **View-only / kiosk mode toggle** - for a shared shop phone or wall tablet.
-8. **mDNS / Bonjour discovery** - auto-find machines on the LAN when adding.
+8. ~~**mDNS / Bonjour discovery** - auto-find machines on the LAN when adding.~~ **Done** via
+   a lightweight UDP beacon (`MaestroBeacon` + `/api/peers`); browsers can't do UDP/mDNS, so
+   the server collects peers and the PWA reads the list.
 9. **QR pairing** - scan the PC's QR to prefill host + machineId, then PIN.
 10. **Haptics** on jog/confirm; **wake lock** while a job runs.
 

@@ -9,8 +9,8 @@ more CNC machines running UCCNC + the Maestro plugin.
 - See the currently running Maestro project: which step, progress bar, time remaining, ETA.
 - Control the machine: jog (step/continuous), home, park, auto-zero, manual spindle,
   run/pause/stop jobs, feed hold, and E-STOP - with safety guards appropriate to remote control.
-- Manage multiple machines from one phone (add / remove / rename / connect / switch), each
-  with its own units (mm or SAE/inch).
+- Manage multiple machines from one phone (auto-discovered on the LAN, or added by IP;
+  remove / rename / connect / switch), each with its own units (mm or SAE/inch).
 
 > **End-user guide with screenshots + setup:** [REMOTE_APP.md](REMOTE_APP.md).
 
@@ -24,7 +24,9 @@ more CNC machines running UCCNC + the Maestro plugin.
 
 Each machine is a separate shop PC running its own UCCNC + Maestro plugin, and therefore
 its own embedded companion server. The phone (client) owns the list of machines and
-switches between them; there is no server-to-server coordination.
+switches between them. Servers exchange a lightweight UDP discovery beacon so each can list
+the others (surfaced to the phone via `/api/peers`), but there is no server-to-server
+control coordination.
 
 ```
 Phone PWA  ---- LAN HTTP + SSE ---->  Shop PC A (UccncMaestro.dll : MaestroServer)

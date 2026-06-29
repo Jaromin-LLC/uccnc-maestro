@@ -25,18 +25,28 @@
   Headless mode only: replace existing projects.json / tools.json with the
   bundled seed files. Default is to keep existing workflow data.
 
+.PARAMETER EnableLan
+  Also configure the PC so phones/tablets on the LAN can reach the mobile
+  companion: reserve the HTTP URL ACL and open an inbound firewall rule for
+  the companion port. Requires administrator rights (prompts via UAC).
+
+.PARAMETER Port
+  Companion server port to open for LAN access. Default 8723.
+
 .EXAMPLE
   .\Install.ps1
   Opens the setup window.
 
 .EXAMPLE
-  .\Install.ps1 -UccncRoot "D:\UCCNC" -Yes
-  Unattended install into D:\UCCNC, keeping any existing workflow data.
+  .\Install.ps1 -UccncRoot "D:\UCCNC" -Yes -EnableLan
+  Unattended install into D:\UCCNC, keeping workflow data, and open LAN access.
 #>
 param(
     [string]$UccncRoot = "",
     [switch]$Yes,
-    [switch]$OverwriteConfigs
+    [switch]$OverwriteConfigs,
+    [switch]$EnableLan,
+    [int]$Port = 8723
 )
 
 $ErrorActionPreference = "Stop"
@@ -121,6 +131,64 @@ function Install-Maestro {
     & $Log "  3. Restart UCCNC - the Maestro window opens"
 }
 
+# Reserves the HTTP URL ACL and opens an inbound firewall rule so phones on the LAN can
+# reach the companion server. The netsh calls require elevation; if we are not already
+# admin, the actual changes run in a single elevated child process (UAC), then we verify
+# the result here (verification reads are non-admin). $Log receives one line at a time.
+function Enable-LanAccess {
+    param(
+        [int]$ListenPort,
+        [scriptblock]$Log
+    )
+
+    $prefix = "http://+:$ListenPort/"
+    $ruleName = "UccncMaestro Companion (TCP $ListenPort)"
+    $udpRuleName = "UccncMaestro Discovery (UDP $ListenPort)"
+    & $Log "Configuring LAN access for the companion on port $ListenPort..."
+
+    $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+    if ($isAdmin) {
+        & netsh http delete urlacl url=$prefix 2>$null | Out-Null
+        & netsh http add urlacl url=$prefix sddl="D:(A;;GX;;;WD)" | Out-Null
+        & netsh advfirewall firewall delete rule name="$ruleName" 2>$null | Out-Null
+        & netsh advfirewall firewall add rule name="$ruleName" dir=in action=allow protocol=TCP localport=$ListenPort profile=any | Out-Null
+        & netsh advfirewall firewall delete rule name="$udpRuleName" 2>$null | Out-Null
+        & netsh advfirewall firewall add rule name="$udpRuleName" dir=in action=allow protocol=UDP localport=$ListenPort profile=any | Out-Null
+    } else {
+        # Run the privileged netsh commands once, elevated, then wait for them to finish.
+        $script = @"
+netsh http delete urlacl url=$prefix 2>`$null | Out-Null
+netsh http add urlacl url=$prefix sddl="D:(A;;GX;;;WD)" | Out-Null
+netsh advfirewall firewall delete rule name="$ruleName" 2>`$null | Out-Null
+netsh advfirewall firewall add rule name="$ruleName" dir=in action=allow protocol=TCP localport=$ListenPort profile=any | Out-Null
+netsh advfirewall firewall delete rule name="$udpRuleName" 2>`$null | Out-Null
+netsh advfirewall firewall add rule name="$udpRuleName" dir=in action=allow protocol=UDP localport=$ListenPort profile=any | Out-Null
+"@
+        $tmp = Join-Path $env:TEMP ("maestro-lan-" + [Guid]::NewGuid().ToString("N") + ".ps1")
+        Set-Content -Path $tmp -Value $script -Encoding UTF8
+        & $Log "Requesting administrator rights (UAC) to open the port..."
+        try {
+            $p = Start-Process -FilePath "powershell.exe" -Verb RunAs -Wait -PassThru `
+                -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$tmp`"")
+        } catch {
+            & $Log "[WARN] LAN setup skipped - elevation was cancelled. You can run it later (see README)."
+            Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+            return
+        }
+        Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+    }
+
+    # Verify (these reads do not need admin).
+    $aclOk = $false
+    try { $aclOk = ((& netsh http show urlacl) -join "`n") -match [Regex]::Escape($prefix) } catch { }
+    $fwOk = $false
+    try { $fwOk = -not (((& netsh advfirewall firewall show rule name="$ruleName") -join "`n") -match "No rules match") } catch { }
+
+    if ($aclOk) { & $Log "[OK] Reserved URL ACL $prefix" } else { & $Log "[WARN] URL ACL not reserved - phones may not connect until it is." }
+    if ($fwOk)  { & $Log "[OK] Opened inbound TCP $ListenPort (all network profiles)" } else { & $Log "[WARN] Firewall rule not added - inbound $ListenPort may be blocked." }
+}
+
 if (-not $UccncRoot) { $UccncRoot = Find-UccncRoot }
 $UccncRoot = $UccncRoot.Trim().Trim('"').TrimEnd('\')
 
@@ -141,6 +209,10 @@ if ($Yes) {
     }
     Write-Host "(uc)CNC Maestro - unattended install -> $UccncRoot" -ForegroundColor Cyan
     Install-Maestro -Root $UccncRoot -Overwrite:$OverwriteConfigs.IsPresent -Log { param($line) Write-Host $line }
+    if ($EnableLan) {
+        Write-Host ""
+        Enable-LanAccess -ListenPort $Port -Log { param($line) Write-Host $line }
+    }
     exit 0
 }
 
@@ -159,7 +231,7 @@ if ($packageError) {
 
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "(uc)CNC Maestro Setup"
-$form.Size = New-Object System.Drawing.Size(620, 560)
+$form.Size = New-Object System.Drawing.Size(620, 600)
 $form.StartPosition = "CenterScreen"
 $form.FormBorderStyle = "FixedDialog"
 $form.MaximizeBox = $false
@@ -242,14 +314,40 @@ $overwriteRadio.Location = New-Object System.Drawing.Point(12, 50)
 $overwriteRadio.Width = 540
 $dataGroup.Controls.Add($overwriteRadio)
 
+# --- Mobile companion (LAN access) ---
+$netGroup = New-Object System.Windows.Forms.GroupBox
+$netGroup.Text = "Mobile companion (phone / tablet access)"
+$netGroup.Location = New-Object System.Drawing.Point(16, 262)
+$netGroup.Size = New-Object System.Drawing.Size(572, 80)
+$form.Controls.Add($netGroup)
+
+$lanCheck = New-Object System.Windows.Forms.CheckBox
+$lanCheck.Text = "Allow phones on the Wi-Fi to connect (opens the firewall + reserves the port; needs admin)"
+$lanCheck.Location = New-Object System.Drawing.Point(12, 22)
+$lanCheck.Width = 548
+$lanCheck.Checked = $true
+$netGroup.Controls.Add($lanCheck)
+
+$portLabel = New-Object System.Windows.Forms.Label
+$portLabel.Text = "Companion port:"
+$portLabel.Location = New-Object System.Drawing.Point(12, 50)
+$portLabel.AutoSize = $true
+$netGroup.Controls.Add($portLabel)
+
+$portBox = New-Object System.Windows.Forms.TextBox
+$portBox.Location = New-Object System.Drawing.Point(112, 47)
+$portBox.Width = 70
+$portBox.Text = "$Port"
+$netGroup.Controls.Add($portBox)
+
 # --- Log output ---
 $logBox = New-Object System.Windows.Forms.TextBox
 $logBox.Multiline = $true
 $logBox.ReadOnly = $true
 $logBox.ScrollBars = "Vertical"
 $logBox.Font = New-Object System.Drawing.Font("Consolas", 9)
-$logBox.Location = New-Object System.Drawing.Point(16, 262)
-$logBox.Size = New-Object System.Drawing.Size(572, 200)
+$logBox.Location = New-Object System.Drawing.Point(16, 350)
+$logBox.Size = New-Object System.Drawing.Size(572, 136)
 $form.Controls.Add($logBox)
 
 $appendLog = {
@@ -260,13 +358,13 @@ $appendLog = {
 # --- Buttons ---
 $installBtn = New-Object System.Windows.Forms.Button
 $installBtn.Text = "Install"
-$installBtn.Location = New-Object System.Drawing.Point(408, 474)
+$installBtn.Location = New-Object System.Drawing.Point(408, 498)
 $installBtn.Size = New-Object System.Drawing.Size(88, 30)
 $form.Controls.Add($installBtn)
 
 $closeBtn = New-Object System.Windows.Forms.Button
 $closeBtn.Text = "Close"
-$closeBtn.Location = New-Object System.Drawing.Point(500, 474)
+$closeBtn.Location = New-Object System.Drawing.Point(500, 498)
 $closeBtn.Size = New-Object System.Drawing.Size(88, 30)
 $closeBtn.Add_Click({ $form.Close() })
 $form.Controls.Add($closeBtn)
@@ -291,10 +389,25 @@ $installBtn.Add_Click({
         if ($resp -ne [System.Windows.Forms.DialogResult]::Yes) { return }
     }
 
+    $lanPort = $Port
+    if ($lanCheck.Checked) {
+        $parsed = 0
+        if (-not [int]::TryParse($portBox.Text.Trim(), [ref]$parsed) -or $parsed -lt 1 -or $parsed -gt 65535) {
+            [System.Windows.Forms.MessageBox]::Show($form, "Enter a valid companion port (1-65535).", "Maestro Setup",
+                [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
+            return
+        }
+        $lanPort = $parsed
+    }
+
     $installBtn.Enabled = $false
     $logBox.Clear()
     try {
         Install-Maestro -Root $root -Overwrite $overwriteRadio.Checked -Log $appendLog
+        if ($lanCheck.Checked) {
+            & $appendLog ""
+            Enable-LanAccess -ListenPort $lanPort -Log $appendLog
+        }
         & $appendLog ""
         & $appendLog "Installation completed."
     } catch {

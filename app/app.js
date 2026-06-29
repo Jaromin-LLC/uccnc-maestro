@@ -48,8 +48,8 @@ function machineUnits() { const m = activeMachine(); return (m && m.units === 'i
 function isInch() { return machineUnits() === 'in'; }
 function feedCfg() {
   return isInch()
-    ? { min: 1, max: 200, step: 1, unit: 'in/min', key: 'feedIn' }
-    : { min: 100, max: 4000, step: 100, unit: 'mm/min', key: 'feed' };
+    ? { min: 5, max: 1000, step: 5, unit: 'in/min', key: 'feedIn' }
+    : { min: 100, max: 25000, step: 100, unit: 'mm/min', key: 'feed' };
 }
 function currentFeed() { return state.prefs[feedCfg().key]; }
 function currentStep() { return isInch() ? state.prefs.stepIn : state.prefs.step; }
@@ -330,6 +330,50 @@ function renderMachines() {
 
 function escapeHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
+/* ---------- LAN auto-discovery ---------- */
+// Ask a known Maestro server (the active machine, or the one serving this PWA) for the
+// other machines it has heard on the network, plus itself.
+function discoverBase() {
+  if (state.conn === 'ok') { const b = apiBase(); if (b) return b; }
+  if (location.protocol.indexOf('http') === 0) return location.origin;
+  return '';
+}
+
+async function renderDiscovered() {
+  const box = $('#discoverList');
+  if (!box) return;
+  const base = discoverBase();
+  if (!base) { box.innerHTML = '<div class="sub">Connect to one machine first to discover others.</div>'; return; }
+  box.innerHTML = '<div class="sub">Scanning your network\u2026</div>';
+
+  let data;
+  try { data = await fetch(base + '/api/peers').then(r => r.json()); }
+  catch { box.innerHTML = '<div class="sub">Auto-discovery unavailable on this server.</div>'; return; }
+
+  const cands = [];
+  if (data.self) {
+    try {
+      const u = new URL(base);
+      cands.push({ name: data.self.machineName || u.hostname, host: u.hostname, port: parseInt(u.port || '8723', 10), machineId: data.self.machineId });
+    } catch { }
+  }
+  (data.peers || []).forEach(p => cands.push({ name: p.machineName || p.host, host: p.host, port: p.port, machineId: p.machineId }));
+
+  // Hide machines already in the list (matched by machineId).
+  const known = new Set(state.machines.map(m => m.machineId).filter(Boolean));
+  const list = cands.filter(c => !(c.machineId && known.has(c.machineId)));
+
+  if (list.length === 0) { box.innerHTML = '<div class="sub">No new machines found. Tap Rescan after powering one on.</div>'; return; }
+
+  box.innerHTML = list.map((c, i) => `
+    <div class="mrow">
+      <div class="info"><div class="nm">${escapeHtml(c.name)}</div><div class="host">${escapeHtml(c.host)}:${c.port}</div></div>
+      <button class="mini" data-peer="${i}">Connect</button>
+    </div>`).join('');
+  box.querySelectorAll('[data-peer]').forEach(b =>
+    b.onclick = () => { const c = list[parseInt(b.dataset.peer, 10)]; openAddMachine({ host: c.host, port: c.port, name: c.name }); });
+}
+
 /* ---------- catalog (projects/tools) ---------- */
 async function loadCatalog() {
   try { const r = await api('/api/projects'); state.projects = r.projects || []; }
@@ -371,10 +415,11 @@ function removeMachine(id) {
   render();
 }
 
-function openAddMachine() {
-  openModal(`<h3>Add machine</h3>
-    <label>Address (IP or host)</label><input id="aHost" placeholder="192.168.1.50" inputmode="decimal" />
-    <label>Port</label><input id="aPort" value="8723" inputmode="numeric" />
+function openAddMachine(prefill) {
+  prefill = prefill || {};
+  openModal(`<h3>Connect a machine</h3>
+    <label>Address (IP or host)</label><input id="aHost" placeholder="192.168.1.50" inputmode="decimal" value="${escapeHtml(prefill.host || '')}" />
+    <label>Port</label><input id="aPort" value="${escapeHtml(String(prefill.port || 8723))}" inputmode="numeric" />
     <label>Units (must match the machine's configuration)</label>
     <select id="aUnits" class="project-select">
       <option value="mm">Metric (mm)</option>
@@ -447,6 +492,7 @@ function showScreen(name) {
     $('#screen-' + s).classList.toggle('hidden', s !== name));
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.screen === name));
   render();
+  if (name === 'machines') renderDiscovered();
 }
 
 /* ---------- jog interaction ---------- */
@@ -519,7 +565,8 @@ function wireStaticUi() {
   document.querySelectorAll('.tab').forEach(t => t.onclick = () => showScreen(t.dataset.screen));
   // machine switcher / add
   $('#machineBtn').onclick = () => showScreen('machines');
-  $('#addMachineBtn').onclick = openAddMachine;
+  $('#addMachineBtn').onclick = () => openAddMachine();
+  $('#rescanBtn').onclick = renderDiscovered;
 
   // jog buttons (X/Y cross + Z column + A aux)
   document.querySelectorAll('.jbtn').forEach(b => {

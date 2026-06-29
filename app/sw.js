@@ -1,6 +1,6 @@
 /* App-shell cache. Network-first so UI updates show immediately on the LAN;
    the cache is only a fallback when the machine PC is unreachable. */
-const CACHE = 'maestro-remote-v3';
+const CACHE = 'maestro-remote-v4';
 const SHELL = [
   './',
   './index.html',

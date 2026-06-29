@@ -29,6 +29,7 @@ namespace Plugins.Companion
         private Thread _acceptThread;
         private volatile bool _running;
         private string _boundUrl = "";
+        private MaestroBeacon _beacon;
 
         // Pairing tokens -> client label.
         private readonly object _tokenLock = new object();
@@ -115,6 +116,17 @@ namespace Plugins.Companion
             _acceptThread = new Thread(AcceptLoop) { IsBackground = true, Name = "MaestroServer" };
             _acceptThread.Start();
             _log("Companion server listening on " + _boundUrl);
+
+            // LAN auto-discovery: advertise this machine + collect peers (only when on LAN).
+            if (_settings.openOnLan)
+            {
+                try
+                {
+                    _beacon = new MaestroBeacon(_settings.port, _controller.MachineId, _controller.MachineName, "1.1.0", _log);
+                    _beacon.Start();
+                }
+                catch { _beacon = null; }
+            }
         }
 
         public void Stop()
@@ -122,6 +134,7 @@ namespace Plugins.Companion
             if (!_running) return;
             _running = false;
             try { _controller.SnapshotChanged -= OnSnapshotChanged; } catch { }
+            try { if (_beacon != null) _beacon.Dispose(); } catch { }
             try { if (_jogWatchdog != null) _jogWatchdog.Dispose(); } catch { }
             try { if (_listener != null) _listener.Stop(); } catch { }
             try { if (_listener != null) _listener.Close(); } catch { }
@@ -168,6 +181,7 @@ namespace Plugins.Companion
             // Unauthenticated endpoints.
             if (path == "/api/health") { WriteJson(ctx, new { ok = true }, 200); return; }
             if (path == "/api/info") { HandleInfo(ctx); return; }
+            if (path == "/api/peers") { HandlePeers(ctx); return; }
             if (path == "/api/pair") { HandlePair(ctx); return; }
 
             // Everything else requires a valid token.
@@ -222,6 +236,30 @@ namespace Plugins.Companion
                 version = "1.1.0",
                 build = BuildId,
                 requiresPin = _settings.requirePin
+            }, 200);
+        }
+
+        private void HandlePeers(HttpListenerContext ctx)
+        {
+            var peers = _beacon != null ? _beacon.Peers() : new List<DiscoveredPeer>();
+            var list = new List<object>();
+            foreach (var p in peers)
+            {
+                list.Add(new
+                {
+                    machineId = p.machineId,
+                    machineName = p.machineName,
+                    host = p.host,
+                    port = p.port,
+                    version = p.version,
+                    url = "http://" + p.host + ":" + p.port + "/"
+                });
+            }
+            WriteJson(ctx, new
+            {
+                self = new { machineId = _controller.MachineId, machineName = _controller.MachineName },
+                discoveryEnabled = _beacon != null,
+                peers = list
             }, 200);
         }
 

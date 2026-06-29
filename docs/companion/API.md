@@ -7,7 +7,7 @@ Base: `http://<host>:<port>` (default port `8723`).
 
 ## Auth
 
-- `GET /api/info` and `GET /api/health` are **unauthenticated** (used by Add / discovery).
+- `GET /api/info`, `GET /api/health`, and `GET /api/peers` are **unauthenticated** (used by Add / discovery).
 - All other endpoints require `Authorization: Bearer <token>`, obtained via pairing.
 - Control endpoints additionally require the caller to hold the **active-controller lock**
   (acquired implicitly by the first controller; others get `423 Locked` on control calls
@@ -25,6 +25,24 @@ Base: `http://<host>:<port>` (default port `8723`).
 Request: `{ "pin": "4821", "client": "Patrick iPhone" }`
 Response 200: `{ "token": "<opaque>", "machineId": "...", "machineName": "Router 1" }`
 Response 401: `{ "error": "bad_pin" }`
+
+### `GET /api/peers`  (unauthenticated)
+LAN auto-discovery. The plugin broadcasts a small UDP beacon (port = HTTP port, default
+`8723`) every ~5 s and listens for other machines' beacons, keeping a list of peers seen in
+the last ~20 s. Because browsers can't do UDP, the PWA asks its connected server for the
+list. Returns the machine itself plus discovered peers (peers exclude self):
+```json
+{
+  "self": { "machineId": "b1c2...", "machineName": "Router 1" },
+  "discoveryEnabled": true,
+  "peers": [
+    { "machineId": "9f3a...", "machineName": "Router 2", "host": "192.168.1.51",
+      "port": 8723, "version": "1.1.0", "url": "http://192.168.1.51:8723/" }
+  ]
+}
+```
+`discoveryEnabled` is `false` if the UDP beacon couldn't bind (e.g. server not on LAN). The
+beacon only runs when the server is bound LAN-wide (`openOnLan`).
 
 ## Status
 
@@ -91,6 +109,9 @@ comments to keep the connection alive.
   `feed`: mm/min (or in/min).
 - `step` mode issues one incremental move. `cont` mode starts continuous motion that
   continues until `POST /api/jog/stop`, the watchdog expires, or the controller disconnects.
+- `feed` applies to **both** modes. For `cont`, the server sets UCCNC's jog feedrate
+  (field `913`) to `feed` before starting motion, so continuous jog runs at the slider's
+  speed rather than a fixed rate.
 
 ### `POST /api/jog/stop`  -> stops continuous jog.
 

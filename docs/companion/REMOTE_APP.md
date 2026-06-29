@@ -41,16 +41,20 @@ the local network.
    UCCNC so the Maestro window opens.
 
 2. **Open network access.** By default Windows blocks inbound connections and the server
-   can only bind to `localhost` (so phones can't reach it). From the repo, run **once**
-   (it raises a UAC prompt):
+   can only bind to `localhost` (so phones can't reach it). You have three options:
 
-   ```powershell
-   .\make.ps1 net-setup
-   ```
+   - **Packaged installer (easiest).** Leave **“Allow phones on the Wi‑Fi to connect”**
+     checked in the setup window (it’s on by default), then click *Install*. Approve the
+     UAC prompt. For an unattended install add `-EnableLan` (and optionally `-Port 8723`).
+   - **From the repo**, run **once** (raises a UAC prompt):
 
-   This reserves the HTTP URL so the plugin can listen on all LAN interfaces, and opens an
-   inbound firewall rule for the companion port (default **8723**) on Private/Domain
-   networks.
+     ```powershell
+     .\make.ps1 net-setup
+     ```
+
+   Either path reserves the HTTP URL so the plugin can listen on all LAN interfaces, and
+   opens an inbound firewall rule for the companion port (default **8723**) on **all**
+   network profiles (incl. Public, since shop Wi‑Fi is often marked Public).
 
    <details><summary>Prefer to do it by hand?</summary>
 
@@ -59,8 +63,15 @@ the local network.
    ```powershell
    netsh http add urlacl url=http://+:8723/ sddl="D:(A;;GX;;;WD)"
    netsh advfirewall firewall add rule name="UccncMaestro Companion (TCP 8723)" `
-     dir=in action=allow protocol=TCP localport=8723 profile=private,domain
+     dir=in action=allow protocol=TCP localport=8723 profile=any
+   netsh advfirewall firewall add rule name="UccncMaestro Discovery (UDP 8723)" `
+     dir=in action=allow protocol=UDP localport=8723 profile=any
    ```
+
+   `profile=any` matters: shop PCs often leave the Wi‑Fi marked **Public**, and a
+   Private/Domain‑only rule would silently drop phone traffic (the page just hangs).
+   The **UDP** rule enables LAN auto‑discovery (machines find each other); it's optional
+   — without it you can still add machines by IP.
    </details>
 
 3. **Restart UCCNC** so the server re‑binds to the LAN.
@@ -104,7 +115,8 @@ it's rotated.
 - **MODE**: choose **CONT** (continuous) or **STEP**. *Continuous is the default* — press and
   hold a button to move, release to stop. In **STEP** mode each tap moves one increment, and
   the **STEP** selector picks the distance.
-- **JOG FEED** slider sets jog speed (mm/min or in/min depending on the machine's units).
+- **JOG FEED** slider sets jog speed (mm/min or in/min depending on the machine's units) for
+  **both** step and continuous jogging — continuous jog moves at this feed, not a fixed rate.
 - **SPINDLE** slider sets a target RPM; **hold** the toggle to turn the spindle **ON** (a
   deliberate hold, since it spins a tool), tap to turn it **OFF**. Dragging the slider while
   it's running changes the speed live. *(Disabled while a job is running.)*
@@ -134,7 +146,11 @@ it's rotated.
 
 ![Machines screen](img/mobile-machines.png)
 
-- **Connect/Active**, **Edit** (rename + change units), **Remove**, and **+ Add Machine**.
+- **Connect/Active**, **Edit** (rename + change units), **Remove**, and **+ Add by IP address**.
+- **Found on your network** lists other Maestro machines discovered automatically on the
+  LAN — tap **Connect** to add one (you'll confirm units and pair as usual). Use **Rescan**
+  after powering a machine on. Discovery needs the inbound **UDP** firewall rule (added by
+  the installer); if it's missing, machines won't appear but you can still add them by IP.
 - The footer shows the **active server version and build** so you can confirm a device is
   talking to the build you expect.
 
@@ -170,11 +186,21 @@ internet.
 
 ## Troubleshooting
 
-**Phone can't connect / page won't load**
-- Run `.\make.ps1 net-setup` (elevated) and **restart UCCNC**. Without it the server falls
-  back to `localhost` only.
+**Phone can't connect / page just hangs**
+- **Type the address with `http://`** — `http://<LAN‑IP>:8723/`. A bare address makes most
+  phone browsers try **HTTPS**, which the server doesn't speak, so the page hangs. In
+  Chrome turn off *Settings → Privacy and security → “Always use secure connections.”*
+- Re-run the installer with **“Allow phones on the Wi‑Fi to connect”** checked (or
+  `.\make.ps1 net-setup` from the repo, elevated) and **restart UCCNC**. Without the URL
+  ACL the server falls back to `localhost` only; the firewall rule now covers **all**
+  network profiles (incl. Public).
+- If the PC reaches itself but other devices still can't, the block is on the **network**:
+  disable the router's **AP/client isolation** (common on mesh/guest Wi‑Fi) and make sure
+  the phone is on the **same SSID** (not a guest network).
+- **“Bad Request – Invalid Hostname”** from the phone means the server bound to `localhost`
+  only (the URL ACL wasn't present when UCCNC started). Re‑run the installer with the Wi‑Fi
+  option checked, then **restart UCCNC**.
 - Confirm the Mobile tab shows a `http://<LAN‑IP>:8723/` address, not `localhost`.
-- Make sure both devices are on the same Wi‑Fi and the network is **Private** in Windows.
 
 **The UI looks like an older version**
 - Your browser cached the previous app shell. **Hard‑refresh twice** (the first reload

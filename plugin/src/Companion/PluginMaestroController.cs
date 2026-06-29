@@ -30,9 +30,61 @@ namespace Plugins.Companion
         public const int LedHomedX = 56;    // confirmed in MachineOps
         public const int LedHomedY = 57;    // confirmed in MachineOps
         public const int LedHomedZ = 58;    // confirmed in MachineOps
+        public const int LedReset = 25;     // active reset signal (machine disabled)
+        public const int LedEstop = 36;     // hardware E-stop input triggered
+        public const int LedFeedhold = 217; // feed-hold button active
 
         // Buttons (Callbutton). 128 = Cycle Start (confirmed in MachineOps).
         public const int BtnCycleStart = 128;
+        public const int BtnCycleStop = 130;
+        public const int BtnResetOn = 512;  // puts the machine into reset (remote E-stop)
+        public const int BtnResetOff = 513;
+        public const int BtnFeedHoldOn = 523;
+        public const int BtnFeedHoldOff = 524;
+
+        // Homing buttons: all = 113; per-axis X/Y/Z/A = 107/108/109/110.
+        public const int BtnHomeAll = 113;
+        public static int HomeButtonForAxis(string axis)
+        {
+            switch ((axis ?? "all").ToUpperInvariant())
+            {
+                case "ALL": case "": return BtnHomeAll;
+                case "X": return 107;
+                case "Y": return 108;
+                case "Z": return 109;
+                case "A": return 110;
+                default: return -1;
+            }
+        }
+
+        // Native jog buttons (Callbutton). Standard UCCNC codes: a "start" code begins
+        // jogging in a direction and the matching "off" code stops it (continuous jog must
+        // be turned off explicitly). 161 forces continuous mode first.
+        public const int JogModeCont = 161;
+
+        // Jog feedrate field (units/min) - lets the app set continuous jog speed directly.
+        public const int JogFeedrateField = 913;
+
+        // Start codes: X+ 147, X- 148, Y+ 149, Y- 150, Z+ 151, Z- 152, A+ 153, A- 154.
+        // Off codes:   X+ 229, X- 230, Y+ 231, Y- 232, Z+ 233, Z- 234, A+ 235, A- 236.
+        public static bool TryGetJogButtons(string axis, int dir, out int startBtn, out int stopBtn)
+        {
+            startBtn = 0; stopBtn = 0;
+            int baseStart, baseStop;
+            switch ((axis ?? "").ToUpperInvariant())
+            {
+                case "X": baseStart = 147; baseStop = 229; break;
+                case "Y": baseStart = 149; baseStop = 231; break;
+                case "Z": baseStart = 151; baseStop = 233; break;
+                case "A": baseStart = 153; baseStop = 235; break;
+                default: return false;
+            }
+            // +dir uses the base code; -dir uses the next (odd) code.
+            int offset = dir >= 0 ? 0 : 1;
+            startBtn = baseStart + offset;
+            stopBtn = baseStop + offset;
+            return true;
+        }
     }
 
     /// <summary>
@@ -66,9 +118,10 @@ namespace Plugins.Companion
         private DateTime _workStart = DateTime.MinValue;
         private int _estimateSeconds;
 
-        // Continuous jog emulation (incremental moves until stopped).
+        // Native continuous jog: remember the active "off" button so JogStop / watchdog can
+        // turn it back off (UCCNC continuous jog does not self-stop).
         private volatile bool _jogActive;
-        private Thread _jogThread;
+        private int _jogStopButton;
 
         // Manual spindle (jog screen) - reflected in the snapshot until UCCNC reports RPM.
         private bool _spindleOn;
@@ -183,30 +236,44 @@ namespace Plugins.Companion
         private void StartContinuousJog(string axis, int dir, double feed)
         {
             StopContinuousJog();
-            _jogActive = true;
-            // Emulate continuous jog with a stream of small incremental moves while the
-            // client holds the button (the server watchdog calls JogStop when keepalives
-            // stop). NOTE: a production build may switch to UCCNC's jog Callbutton codes;
-            // centralize that change here.
-            _jogThread = new Thread(() =>
+
+            int startBtn, stopBtn;
+            if (!UccncIo.TryGetJogButtons(axis, dir, out startBtn, out stopBtn))
             {
-                double inc = Math.Max(0.05, feed / 60.0 * 0.12); // ~0.12 s of travel per pulse
-                while (_jogActive)
+                // Unknown axis: fall back to a single bounded step so we never stream moves.
+                JogIncrement(axis, dir * 1.0, feed);
+                Changed();
+                return;
+            }
+
+            // True continuous jog: force continuous mode, then press the axis jog button.
+            // Motion runs until the matching "off" button (or Stop) is sent - the HTTP
+            // keepalive watchdog calls JogStop() when the client releases or disconnects.
+            lock (_lock) { _jogStopButton = stopBtn; _jogActive = true; }
+            try
+            {
+                // Set the jog feedrate (units/min) from the app's JOG FEED slider, then jog.
+                if (feed > 0)
                 {
-                    JogIncrement(axis, dir * inc, feed);
-                    Changed();
-                    Thread.Sleep(100);
+                    try { _host.UC.Setfield(true, feed, UccncIo.JogFeedrateField); _host.UC.Validatefield(true, UccncIo.JogFeedrateField); } catch { }
                 }
-            }) { IsBackground = true };
-            _jogThread.Start();
+                _host.UC.Callbutton(UccncIo.JogModeCont);
+                _host.UC.Callbutton(startBtn);
+            }
+            catch { /* fail safe: leave _jogActive so a later JogStop still fires the off code */ }
         }
 
         private void StopContinuousJog()
         {
-            _jogActive = false;
-            var t = _jogThread;
-            if (t != null) { try { t.Join(300); } catch { } }
-            _jogThread = null;
+            int stopBtn;
+            lock (_lock)
+            {
+                if (!_jogActive) { _jogStopButton = 0; return; }
+                _jogActive = false;
+                stopBtn = _jogStopButton;
+                _jogStopButton = 0;
+            }
+            if (stopBtn != 0) { try { _host.UC.Callbutton(stopBtn); } catch { } }
         }
 
         public CommandResult JogStop()
@@ -271,11 +338,17 @@ namespace Plugins.Companion
 
         public CommandResult Home(string axis)
         {
-            // Homing is not exposed via a confirmed Callbutton id here; surface a clear
-            // message rather than press an unknown button. (Verify the Home button number
-            // on the target UCCNC build, then implement via Callbutton.)
-            return CommandResult.Fail("not_supported",
-                "Remote homing is not enabled for this machine yet. Home from UCCNC, then use the app.", 501);
+            if (_engine.IsRunning) return CommandResult.Conflict("Cannot home while a job is running.");
+            if (_host.UC != null && _host.UC.GetLED(UccncIo.LedCycle)) return CommandResult.Conflict("Cannot home while a cycle is active.");
+
+            int btn = UccncIo.HomeButtonForAxis(axis);
+            if (btn < 0) return CommandResult.BadRequest("Unknown axis: " + axis);
+            StopContinuousJog();
+            try { _host.UC.Callbutton(btn); }
+            catch (Exception ex) { return CommandResult.Fail("server_error", ex.Message, 500); }
+            SetStatus(btn == UccncIo.BtnHomeAll ? "Homing all axes..." : ("Homing " + axis.ToUpperInvariant() + "..."));
+            Changed();
+            return CommandResult.Ok();
         }
 
         public CommandResult GotoZero()
@@ -307,18 +380,19 @@ namespace Plugins.Companion
 
         public CommandResult FeedHold()
         {
-            // UCCNC feed-hold button id is not confirmed here; fall back to Stop so a
-            // safety request always halts motion. (Verify feed-hold button to enable a
-            // true pause/resume.)
-            try { _host.UC.Stop(); } catch { }
-            SetStatus("Feed hold (stop) requested.");
+            // True feed hold: pauses motion (resumable), unlike Stop which ends the move.
+            try { _host.UC.Callbutton(UccncIo.BtnFeedHoldOn); } catch { }
+            SetStatus("Feed hold.");
+            Changed();
             return CommandResult.Ok();
         }
 
         public CommandResult Resume()
         {
-            try { _host.UC.Callbutton(UccncIo.BtnCycleStart); } catch { }
-            SetStatus("Resume (cycle start) requested.");
+            // Release feed hold; if a job was paused mid-run this resumes it.
+            try { _host.UC.Callbutton(UccncIo.BtnFeedHoldOff); } catch { }
+            SetStatus("Resumed.");
+            Changed();
             return CommandResult.Ok();
         }
 
@@ -335,8 +409,12 @@ namespace Plugins.Companion
         {
             StopContinuousJog();
             if (_engine.IsRunning) _engine.RequestAbort();
+            // Put the machine into Reset (disables motion) - this is what an operator sees
+            // as "E-stop / reset" on the UCCNC screen. Stop() as a belt-and-suspenders halt.
+            try { _host.UC.Callbutton(UccncIo.BtnResetOn); } catch { }
             try { _host.UC.Stop(); } catch { }
-            SetStatus("E-STOP requested.");
+            SetStatus("E-STOP - machine in reset.");
+            Changed();
             return CommandResult.Ok();
         }
 
@@ -415,6 +493,7 @@ namespace Plugins.Companion
             var uc = _host.UC;
 
             bool homedX = false, homedY = false, homedZ = false, cycle = false;
+            bool reset = false, estop = false, feedhold = false;
             double wx = 0, wy = 0, wz = 0, wa = 0;
             int feedOv = 100, line = 0;
             if (uc != null)
@@ -423,6 +502,9 @@ namespace Plugins.Companion
                 try { homedY = uc.GetLED(UccncIo.LedHomedY); } catch { }
                 try { homedZ = uc.GetLED(UccncIo.LedHomedZ); } catch { }
                 try { cycle = uc.GetLED(UccncIo.LedCycle); } catch { }
+                try { reset = uc.GetLED(UccncIo.LedReset); } catch { }
+                try { estop = uc.GetLED(UccncIo.LedEstop); } catch { }
+                try { feedhold = uc.GetLED(UccncIo.LedFeedhold); } catch { }
                 try { wx = uc.Getfielddouble(true, UccncIo.DroWorkX); } catch { }
                 try { wy = uc.Getfielddouble(true, UccncIo.DroWorkY); } catch { }
                 try { wz = uc.Getfielddouble(true, UccncIo.DroWorkZ); } catch { }
@@ -434,6 +516,8 @@ namespace Plugins.Companion
             snap.connected = uc != null;
             snap.machine.homed = new AxisFlags { x = homedX, y = homedY, z = homedZ, a = true };
             snap.machine.cycleRunning = cycle;
+            snap.machine.estopped = reset || estop;
+            snap.machine.feedHold = feedhold;
             snap.machine.moving = false;
             snap.machine.units = "mm";
             snap.machine.pos = new AxisPos { x = wx, y = wy, z = wz, a = wa };

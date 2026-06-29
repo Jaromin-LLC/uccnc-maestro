@@ -248,6 +248,8 @@ h2 { margin: 4px 0 8px; }
 .mrow .info .nm { font-weight: 700; }
 .mrow .info .host { color: var(--muted); font-size: 12px; }
 .mrow .mini { background: var(--panel2); border: 1px solid var(--line); color: var(--text); border-radius: 8px; padding: 8px 10px; font-size: 13px; }
+.discover-head { display: flex; align-items: center; justify-content: space-between; margin: 4px 2px 8px; color: var(--muted); font-size: 13px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; }
+.discover-head .mini { background: var(--panel2); border: 1px solid var(--line); color: var(--text); border-radius: 8px; padding: 6px 10px; font-size: 12px; text-transform: none; letter-spacing: 0; }
 
 /* Safety bar */
 #safetyBar {
