@@ -20,11 +20,12 @@ and a Machine Manager reachable from the top bar.
 - **Found on your network**: machines discovered automatically on the LAN (via the server's
   UDP beacon / `/api/peers`) appear here with a **Connect** button that prefills the add
   flow; a **Rescan** button refreshes. Machines already saved are hidden from the list.
-- **Add by IP address**: enter host/IP (and optional port), the machine's **units** (mm / in),
-  and **this device's name** (the control-holder label other clients see), then enter the PIN
-  to pair. On success the machine is saved with its token and friendly name (defaults to the
-  server's `machineName`). (QR pairing is still Phase 3.)
-- **Edit**: change the phone-side label and units (does not change the PC).
+- **Add by IP address**: enter host/IP (and optional port) and **this device's name** (the
+  control-holder label other clients see), then enter the PIN to pair. **Units are read from
+  the machine** (its `/api/info` + status), not chosen here. On success the machine is saved
+  with its token and friendly name (defaults to the server's `machineName`). (QR pairing is
+  still Phase 3.)
+- **Edit**: change the phone-side label (units are machine-driven and shown read-only).
 - **Remove**: forget the machine + token.
 - **Switch/Connect**: selecting a machine becomes the active machine; the app tears down the
   current SSE stream and opens one against the selected machine; all screens re-target it.

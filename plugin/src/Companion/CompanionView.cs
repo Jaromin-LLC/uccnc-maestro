@@ -24,6 +24,7 @@ namespace Plugins.Companion
         private CheckBox _requirePin;
         private TextBox _port;
         private TextBox _machineName;
+        private ComboBox _units;
         private TextBox _cameraUrl;
         private Label _pinLabel;
         private Label _urlList;
@@ -105,6 +106,25 @@ namespace Plugins.Companion
             _machineName = new TextBox { Location = new Point(120, y + 2), Size = new Size(260, 24), Text = _settings.machineName };
             y += 36;
 
+            var unitsCaption = MakeCaption("Units:", 18, y + 6);
+            _units = new ComboBox
+            {
+                Location = new Point(120, y + 2),
+                Size = new Size(180, 24),
+                DropDownStyle = ComboBoxStyle.DropDownList
+            };
+            _units.Items.Add("Metric (mm)");
+            _units.Items.Add("Imperial / SAE (in)");
+            _units.SelectedIndex = CompanionSettings.NormalizeUnits(_settings.units) == "in" ? 1 : 0;
+            var unitsHint = new Label
+            {
+                Text = "Match how this machine's UCCNC profile is configured.",
+                AutoSize = true,
+                ForeColor = Color.FromArgb(110, 110, 110),
+                Location = new Point(308, y + 6)
+            };
+            y += 36;
+
             var camCaption = MakeCaption("Camera URL:", 18, y + 6);
             _cameraUrl = new TextBox { Location = new Point(120, y + 2), Size = new Size(420, 24), Text = _settings.cameraUrl ?? "" };
             y += 44;
@@ -130,6 +150,9 @@ namespace Plugins.Companion
             Controls.Add(_port);
             Controls.Add(nameCaption);
             Controls.Add(_machineName);
+            Controls.Add(unitsCaption);
+            Controls.Add(_units);
+            Controls.Add(unitsHint);
             Controls.Add(camCaption);
             Controls.Add(_cameraUrl);
             Controls.Add(apply);
@@ -161,6 +184,7 @@ namespace Plugins.Companion
             _settings.requirePin = _requirePin.Checked;
             _settings.port = port;
             _settings.machineName = _machineName.Text.Trim();
+            _settings.units = _units.SelectedIndex == 1 ? "in" : "mm";
             _settings.cameraUrl = _cameraUrl.Text.Trim();
             _settings.EnsureDefaults(_settings.machineName);
 

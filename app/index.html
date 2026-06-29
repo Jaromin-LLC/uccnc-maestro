@@ -7,9 +7,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>CNC Maestro Remote</title>
+  <meta name="apple-mobile-web-app-title" content="Maestro" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
-  <link rel="apple-touch-icon" href="icons/icon.svg" />
+  <link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -27,6 +29,17 @@
 
   <!-- Disconnected banner -->
   <div id="banner" class="banner hidden"></div>
+
+  <!-- Install (Add to Home Screen) prompt -->
+  <div id="installBar" class="install-bar hidden">
+    <img class="ib-icon" src="icons/icon-192.png" alt="" />
+    <div class="ib-text">
+      <div class="ib-title">Install CNC Maestro</div>
+      <div class="ib-sub" id="installSub">Add it to your home screen for full-screen, app-like access.</div>
+    </div>
+    <button id="installAction" class="ib-action">Install</button>
+    <button id="installDismiss" class="ib-dismiss" aria-label="Dismiss">&times;</button>
+  </div>
 
   <!-- Screens -->
   <main id="main">

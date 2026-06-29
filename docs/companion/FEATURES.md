@@ -6,7 +6,8 @@ scoped to a local-network shop tool.
 
 ## MVP (this effort)
 
-- [x] Multi-machine: add / remove / rename / switch, with per-machine units (mm / SAE).
+- [x] Multi-machine: add / remove / rename / switch. Units (mm / SAE) are configured on the
+      machine (Mobile tab) and reported via the API, so phones adopt them automatically.
 - [x] LAN auto-discovery: UDP beacon + `/api/peers`; "Found on your network" tap-to-connect
       list with add-by-IP fallback.
 - [x] Live status: DROs (X/Y/Z/A work + machine), homed flags, cycle/feed-hold/alarm state.

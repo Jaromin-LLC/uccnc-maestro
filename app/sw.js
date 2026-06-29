@@ -1,6 +1,6 @@
 /* App-shell cache. Network-first so UI updates show immediately on the LAN;
    the cache is only a fallback when the machine PC is unreachable. */
-const CACHE = 'maestro-remote-v4';
+const CACHE = 'maestro-remote-v5';
 const SHELL = [
   './',
   './index.html',
@@ -9,6 +9,10 @@ const SHELL = [
   './manifest.webmanifest',
   './icons/icon.svg',
   './icons/mark.png',
+  './icons/icon-192.png',
+  './icons/icon-512.png',
+  './icons/maskable-512.png',
+  './icons/apple-touch-icon.png',
 ];
 
 self.addEventListener('install', (e) => {

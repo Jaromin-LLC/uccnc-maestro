@@ -235,6 +235,7 @@ namespace Plugins.Companion
                 machineName = _controller.MachineName,
                 version = "1.1.0",
                 build = BuildId,
+                units = CompanionSettings.NormalizeUnits(_settings.units),
                 requiresPin = _settings.requirePin
             }, 200);
         }
@@ -312,15 +313,33 @@ namespace Plugins.Companion
             try
             {
                 var stream = res.OutputStream;
-                WriteSse(stream, "status", _json.Serialize(BuildSnapshot(client)));
+
+                // Push a full status only when the snapshot actually changes; otherwise send
+                // a lightweight comment ping to keep the connection alive. This cuts the
+                // per-client traffic to roughly one frame per real change (DRO move, state
+                // transition, or the once-a-second job clock) instead of 2 frames/second.
+                string lastKey = null;
+                var first = BuildSnapshot(client);
+                lastKey = SnapshotCompareKey(first);
+                WriteSse(stream, "status", _json.Serialize(first));
+                stream.Flush();
 
                 while (_running)
                 {
-                    bool changed = signal.WaitOne(500);
+                    signal.WaitOne(500);
                     if (!_running) break;
-                    string payload = _json.Serialize(BuildSnapshot(client));
-                    if (changed) WriteSse(stream, "status", payload);
-                    else WriteSse(stream, "status", payload); // heartbeat also carries fresh status
+
+                    var snap = BuildSnapshot(client);
+                    string key = SnapshotCompareKey(snap);
+                    if (key != lastKey)
+                    {
+                        lastKey = key;
+                        WriteSse(stream, "status", _json.Serialize(snap));
+                    }
+                    else
+                    {
+                        WritePing(stream);
+                    }
                     stream.Flush();
                 }
             }
@@ -571,6 +590,25 @@ namespace Plugins.Companion
             sb.Append("data: ").Append(data).Append("\n\n");
             byte[] bytes = Encoding.UTF8.GetBytes(sb.ToString());
             stream.Write(bytes, 0, bytes.Length);
+        }
+
+        // SSE comment line: ignored by EventSource but keeps the TCP connection alive.
+        private static void WritePing(Stream stream)
+        {
+            byte[] bytes = Encoding.UTF8.GetBytes(": ping\n\n");
+            stream.Write(bytes, 0, bytes.Length);
+        }
+
+        // Serialized snapshot with the wall-clock timestamp neutralized, so two otherwise
+        // identical snapshots compare equal (ts changes on every build and would otherwise
+        // defeat change detection).
+        private string SnapshotCompareKey(StatusSnapshot snap)
+        {
+            long savedTs = snap.ts;
+            snap.ts = 0;
+            string key = _json.Serialize(snap);
+            snap.ts = savedTs;
+            return key;
         }
 
         // ----- Static assets -------------------------------------------------

@@ -16,10 +16,12 @@ Base: `http://<host>:<port>` (default port `8723`).
 ### `GET /api/info`  (unauthenticated)
 ```json
 { "machineId": "b1c2...", "machineName": "Router 1", "version": "1.1.0",
-  "build": "2026-06-27 15:19 (08d25b6)", "requiresPin": true }
+  "build": "2026-06-27 15:19 (08d25b6)", "units": "mm", "requiresPin": true }
 ```
 `build` is the stamped plugin build id (timestamp + git short hash); the test host reports
-`"dev"`. Use it to confirm which build a device is talking to.
+`"dev"`. Use it to confirm which build a device is talking to. `units` (`"mm"` | `"in"`) is
+the machine's configured unit system; the phone adopts it automatically (see the units note
+under Machine commands), so it isn't chosen per-device.
 
 ### `POST /api/pair`  (unauthenticated)
 Request: `{ "pin": "4821", "client": "Patrick iPhone" }`
@@ -88,9 +90,11 @@ beacon only runs when the server is bound LAN-wide (`openOnLan`).
 ```
 
 ### `GET /api/events`  (SSE)
-`text/event-stream`. Emits `event: status` with the same `StatusSnapshot` payload on change
-and at a heartbeat interval (default ~500 ms while connected). Also emits `event: ping`
-comments to keep the connection alive.
+`text/event-stream`. Emits `event: status` with the full `StatusSnapshot` payload **only when
+the snapshot actually changes** (a DRO move, a state transition, or the once-a-second job
+clock). On the ~500 ms heartbeat when nothing changed it instead writes a `: ping` comment
+line to keep the connection alive (ignored by `EventSource`). Change detection ignores the
+snapshot's `ts` field, so an idle machine produces pings rather than redundant status frames.
 
 ## Catalog
 
@@ -140,8 +144,10 @@ lock; rejected with `409 conflict` while a job is running. `on:false` (or `rpm:0
 | `POST /api/stop` | - | Stop current motion / program |
 | `POST /api/estop` | - | Emergency stop (bypasses lock) |
 
-> `units` is a client-side, per-machine setting (mm/in); the server reports DROs in the
-> machine's own UCCNC units. `jog` distances/feeds are sent as plain numbers in those units.
+> `units` (`mm`/`in`) is configured **on the machine** (Maestro's Mobile tab) and reported via
+> `/api/info` and in the status snapshot (`machine.units`); the phone adopts it automatically.
+> UCCNC is unit-agnostic (no G20/G21), so this just tells the app how to label/scale DROs,
+> step presets, and the jog feed. `jog` distances/feeds are sent as plain numbers in those units.
 > `POST /api/goto-zero` still exists but is **not** surfaced in the mobile UI (a one-tap rapid
 > to zero is considered unsafe to expose remotely).
 

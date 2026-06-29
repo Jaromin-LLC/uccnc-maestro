@@ -91,11 +91,11 @@ the local network.
    - **Android (Chrome):** ⋮ menu → *Install app* / *Add to Home screen*.
 3. Open the app → **Machines** tab → **+ Add Machine**:
    - Enter the PC's **IP address** and **port** (8723).
-   - Choose the machine's **units** — **Metric (mm)** or **Imperial / SAE (in)**. This must
-     match how UCCNC is configured on that machine.
    - Set **this device's name** (e.g. "Patrick's iPhone"). It's how other phones see you when
      you hold control — they'll show "View‑only — Patrick's iPhone is in control".
    - Tap **Next**, then enter the **PIN** from the Mobile tab to pair.
+   - **Units** are read from the machine automatically (set once on the Mobile tab), so there's
+     nothing to choose here.
 
 The machine is saved on your phone with a secure token; you won't need the PIN again unless
 it's rotated.
@@ -158,15 +158,19 @@ it's rotated.
 
 ## Units (SAE vs metric)
 
-Units are a **per‑machine** setting chosen when you add a machine (and changeable via
-**Edit**). When a machine is set to **Imperial / SAE**:
+Units follow the **machine's own configuration**, not a per‑phone choice. Set them once on the
+shop PC (Maestro window → **Mobile** tab → **Units**) to match how that machine's UCCNC profile
+is set up; every phone then adopts the right units automatically when it connects. UCCNC itself
+is unit‑agnostic (it doesn't use G20/G21), which is why this lives as a Maestro setting.
+
+When a machine is set to **Imperial / SAE**:
 
 - DROs read in **inches**, step presets become **0.001 / 0.01 / 0.1 / 1 in**, and the jog
   feed is **in/min**.
 - Metric machines use **mm**, **0.01 / 0.1 / 1 / 10**, and **mm/min**.
 
-Each unit system remembers its own step/feed, so switching machines won't scramble settings.
-Make sure the app's units match the machine's actual UCCNC configuration.
+Each unit system remembers its own step/feed, so switching between machines won't scramble
+settings.
 
 ---
 

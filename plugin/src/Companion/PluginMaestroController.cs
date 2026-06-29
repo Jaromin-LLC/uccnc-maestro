@@ -519,7 +519,7 @@ namespace Plugins.Companion
             snap.machine.estopped = reset || estop;
             snap.machine.feedHold = feedhold;
             snap.machine.moving = false;
-            snap.machine.units = "mm";
+            snap.machine.units = CompanionSettings.NormalizeUnits(_settings.units);
             snap.machine.pos = new AxisPos { x = wx, y = wy, z = wz, a = wa };
             snap.machine.machinePos = new AxisPos { x = wx, y = wy, z = wz, a = wa };
             snap.machine.feedOverride = feedOv;

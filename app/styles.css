@@ -68,6 +68,25 @@ body { display: flex; flex-direction: column; }
   padding: 8px; font-size: 13px; z-index: 19;
 }
 
+/* Install (Add to Home Screen) prompt */
+.install-bar {
+  flex: none; display: flex; align-items: center; gap: 12px; z-index: 19;
+  background: linear-gradient(180deg, var(--panel2), var(--panel));
+  border-bottom: 1px solid var(--line); padding: 10px 12px;
+}
+.install-bar .ib-icon { width: 40px; height: 40px; border-radius: 9px; flex: none; }
+.install-bar .ib-text { flex: 1; min-width: 0; }
+.install-bar .ib-title { font-weight: 800; font-size: 14px; }
+.install-bar .ib-sub { color: var(--muted); font-size: 12px; margin-top: 1px; }
+.install-bar .ib-action {
+  flex: none; background: var(--accent); color: #1a1205; border: none;
+  border-radius: 9px; padding: 9px 14px; font-weight: 800; font-size: 13px;
+}
+.install-bar .ib-dismiss {
+  flex: none; background: none; border: none; color: var(--muted);
+  font-size: 22px; line-height: 1; padding: 0 4px;
+}
+
 /* Main scroll area (flex child between header and the fixed bottom bars) */
 #main {
   flex: 1 1 auto; min-height: 0;

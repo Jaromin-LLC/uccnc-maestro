@@ -501,7 +501,7 @@ namespace Plugins.Companion
                 snap.machine.feedHold = _feedHold;
                 snap.machine.moving = _jogContinuous || (_running && _activeStepIndex >= 0 && !_feedHold);
                 snap.machine.estopped = _estopped;
-                snap.machine.units = "mm";
+                snap.machine.units = CompanionSettings.NormalizeUnits(_settings.units);
                 snap.machine.pos = new AxisPos { x = _work[0], y = _work[1], z = _work[2], a = _work[3] };
                 snap.machine.machinePos = new AxisPos { x = _machine[0], y = _machine[1], z = _machine[2], a = _machine[3] };
                 snap.machine.spindleRpm = _spindleRpm;

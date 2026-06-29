@@ -25,6 +25,11 @@ namespace Plugins.Companion
         public string machineName { get; set; }
         public string machineId { get; set; }
 
+        // Machine's configured units: "mm" or "in". UCCNC is unit-agnostic (no G20/G21);
+        // the operator sets this once to match how the UCCNC profile was set up, and the
+        // companion reports it so every phone follows automatically instead of guessing.
+        public string units { get; set; }
+
         // Optional shop-camera stream URL (MJPEG/HLS) surfaced in the app. Empty = no camera.
         public string cameraUrl { get; set; }
 
@@ -37,6 +42,7 @@ namespace Plugins.Companion
             pin = "";
             machineName = "";
             machineId = "";
+            units = "mm";
             cameraUrl = "";
         }
 
@@ -47,8 +53,15 @@ namespace Plugins.Companion
                 machineId = Guid.NewGuid().ToString("N");
             if (string.IsNullOrEmpty(machineName))
                 machineName = string.IsNullOrEmpty(defaultName) ? ("CNC " + machineId.Substring(0, 4)) : defaultName;
+            units = NormalizeUnits(units);
             if (requirePin && string.IsNullOrEmpty(pin))
                 pin = GeneratePin();
+        }
+
+        /// <summary>Coerces any input to a valid unit string ("in" or "mm", default "mm").</summary>
+        public static string NormalizeUnits(string value)
+        {
+            return string.Equals((value ?? "").Trim(), "in", StringComparison.OrdinalIgnoreCase) ? "in" : "mm";
         }
 
         public static string GeneratePin()

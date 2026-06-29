@@ -43,9 +43,26 @@ function guessDeviceName() {
 }
 function deviceName() { return (state.prefs.deviceName || '').trim() || guessDeviceName(); }
 
-/* ---------- units (per machine) ---------- */
-function machineUnits() { const m = activeMachine(); return (m && m.units === 'in') ? 'in' : 'mm'; }
+/* ---------- units (reported by the machine) ---------- */
+/* Units follow the machine's own configuration (reported by the server), not a
+   per-phone choice. The stored per-machine value is just a cached fallback used
+   before the first status/info arrives, and is refreshed from the server. */
+function normUnits(u) { return u === 'in' ? 'in' : 'mm'; }
+function machineUnits() {
+  const s = state.snapshot;
+  if (s && s.machine && (s.machine.units === 'in' || s.machine.units === 'mm')) return s.machine.units;
+  const m = activeMachine();
+  return (m && m.units === 'in') ? 'in' : 'mm';
+}
 function isInch() { return machineUnits() === 'in'; }
+
+/* Persist units learned from the server so they survive reconnects. */
+function syncUnitsFromServer(units) {
+  const m = activeMachine();
+  if (!m) return;
+  const u = normUnits(units);
+  if (m.units !== u) { m.units = u; saveMachines(); }
+}
 function feedCfg() {
   return isInch()
     ? { min: 5, max: 1000, step: 5, unit: 'in/min', key: 'feedIn' }
@@ -88,6 +105,7 @@ function connect() {
   state.es = es;
   es.addEventListener('status', (e) => {
     try { state.snapshot = JSON.parse(e.data); } catch { return; }
+    if (state.snapshot.machine) syncUnitsFromServer(state.snapshot.machine.units);
     setConn('ok');
     render();
   });
@@ -391,19 +409,13 @@ function switchMachine(id) {
 }
 function renameMachine(id) {
   const m = state.machines.find(x => x.id === id); if (!m) return;
-  const cur = m.units === 'in' ? 'in' : 'mm';
   openModal(`<h3>Edit machine</h3>
-    <label>Name</label><input id="mName" value="${escapeHtml(m.name)}" />
-    <label>Units (must match the machine's configuration)</label>
-    <select id="mUnits" class="project-select">
-      <option value="mm" ${cur === 'mm' ? 'selected' : ''}>Metric (mm)</option>
-      <option value="in" ${cur === 'in' ? 'selected' : ''}>Imperial / SAE (in)</option>
-    </select>
+    <label>Name (on this device)</label><input id="mName" value="${escapeHtml(m.name)}" />
+    <div class="sub" style="margin-top:10px">Units (${m.units === 'in' ? 'Imperial / SAE (in)' : 'Metric (mm)'}) are set on the machine and can't be changed from the phone.</div>
     <div class="actions"><button class="cancel" id="mCancel">Cancel</button><button class="ok" id="mOk">Save</button></div>`, () => {
     $('#mCancel').onclick = closeModal;
     $('#mOk').onclick = () => {
       m.name = $('#mName').value.trim() || m.name;
-      m.units = $('#mUnits').value === 'in' ? 'in' : 'mm';
       saveMachines(); closeModal(); render();
     };
   });
@@ -420,11 +432,6 @@ function openAddMachine(prefill) {
   openModal(`<h3>Connect a machine</h3>
     <label>Address (IP or host)</label><input id="aHost" placeholder="192.168.1.50" inputmode="decimal" value="${escapeHtml(prefill.host || '')}" />
     <label>Port</label><input id="aPort" value="${escapeHtml(String(prefill.port || 8723))}" inputmode="numeric" />
-    <label>Units (must match the machine's configuration)</label>
-    <select id="aUnits" class="project-select">
-      <option value="mm">Metric (mm)</option>
-      <option value="in">Imperial / SAE (in)</option>
-    </select>
     <label>This device's name (shown when it holds control)</label>
     <input id="aDevice" value="${escapeHtml(deviceName())}" maxlength="40" />
     <div class="err" id="aErr"></div>
@@ -433,14 +440,14 @@ function openAddMachine(prefill) {
     $('#aNext').onclick = async () => {
       const host = $('#aHost').value.trim();
       const port = $('#aPort').value.trim() || '8723';
-      const units = $('#aUnits').value === 'in' ? 'in' : 'mm';
       const dev = $('#aDevice').value.trim();
       if (dev) { state.prefs.deviceName = dev; savePrefs(); }
       if (!host) { $('#aErr').textContent = 'Enter an address.'; return; }
       const base = (host.startsWith('http') ? host : 'http://' + host) + (host.includes(':') || host.startsWith('http') ? '' : ':' + port);
       try {
         const info = await fetch(base.replace(/\/$/, '') + '/api/info').then(r => r.json());
-        pairStep(base.replace(/\/$/, ''), info, units);
+        // Units come from the machine itself (its UCCNC profile), not a phone choice.
+        pairStep(base.replace(/\/$/, ''), info, normUnits(info.units));
       } catch { $('#aErr').textContent = 'Could not reach that machine.'; }
     };
   });
@@ -633,6 +640,71 @@ async function requestWake() {
   try { if ('wakeLock' in navigator && !wakeLock) wakeLock = await navigator.wakeLock.request('screen'); } catch {}
 }
 
+/* ---------- install prompt (Add to Home Screen) ---------- */
+/* After the first visit, nudge the user to install the PWA. On Android/Chrome we
+   use the captured beforeinstallprompt event for a one-tap native install; on iOS
+   Safari (no such event) we show the manual Share -> Add to Home Screen hint. */
+const install = { deferred: null, state: null };
+
+function loadInstallState() {
+  try { install.state = JSON.parse(localStorage.getItem('maestro.install')) || {}; }
+  catch { install.state = {}; }
+  if (typeof install.state.visits !== 'number') install.state.visits = 0;
+}
+function saveInstallState() { localStorage.setItem('maestro.install', JSON.stringify(install.state)); }
+
+function isStandalone() {
+  return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+}
+function isIos() { return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream; }
+
+function initInstallPrompt() {
+  loadInstallState();
+  install.state.visits += 1;
+  saveInstallState();
+
+  if (isStandalone()) return;             // already installed - never nag
+
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    install.deferred = e;
+    maybeShowInstall();
+  });
+  window.addEventListener('appinstalled', () => {
+    install.state.installed = true; saveInstallState();
+    $('#installBar').classList.add('hidden');
+  });
+
+  $('#installDismiss').onclick = () => {
+    install.state.dismissed = true; saveInstallState();
+    $('#installBar').classList.add('hidden');
+  };
+  $('#installAction').onclick = async () => {
+    if (!install.deferred) return;
+    install.deferred.prompt();
+    try { await install.deferred.userChoice; } catch {}
+    install.deferred = null;
+    $('#installBar').classList.add('hidden');
+  };
+
+  maybeShowInstall();
+}
+
+function maybeShowInstall() {
+  const s = install.state;
+  if (!s || s.installed || s.dismissed || isStandalone()) return;
+  if (s.visits < 2) return;               // only after the first visit
+
+  const ios = isIos();
+  if (!ios && !install.deferred) return;  // Android: wait for the install event
+
+  $('#installSub').textContent = ios
+    ? "Tap the Share icon, then 'Add to Home Screen'."
+    : 'Add it to your home screen for full-screen, app-like access.';
+  $('#installAction').classList.toggle('hidden', ios);
+  $('#installBar').classList.remove('hidden');
+}
+
 /* ---------- service worker ---------- */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
@@ -642,6 +714,7 @@ if ('serviceWorker' in navigator) {
 function boot() {
   loadAll();
   wireStaticUi();
+  initInstallPrompt();
   if (state.machines.length && !state.activeId) setActive(state.machines[0].id);
   if (activeMachine()) { connect(); loadCatalog(); showScreen('jog'); }
   else showScreen('machines');
