@@ -611,7 +611,7 @@ namespace Plugins
                 // Short cycle that already ran to completion between samples.
                 if (cycleFinished != null && cycleFinished())
                 {
-                    if (status != null) status("Run finished.");
+                    if (status != null) status("Run finished (finish event before start was seen).");
                     return true;
                 }
 

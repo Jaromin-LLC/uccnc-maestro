@@ -410,14 +410,73 @@ namespace Plugins
             FileProgressChanged(current, _currentFileTotalLines);
         }
 
+        // UCCNC LED numbers: 54 = cycle running, 229 = M0 stop active. The M1 LED (230)
+        // is not used: its docs don't say whether it means "stopped at M1" or "optional
+        // stop enabled", and the latter would block completion forever.
+        private const int LedCycleRunning = 54;
+        private const int LedM0Stop = 229;
+
+        // A single dark read of the cycle LED is not the end of the program: an AXBB-E
+        // link stall or a stale screen refresh can drop it for a poll while the file is
+        // still running. Without the finish event, the cycle must look idle (LED off
+        // and no motion) continuously for this long before the file counts as done.
+        private const int CycleIdleConfirmMs = 2000;
+        private const int CyclePollMs = 200;
+
         private void WaitForCycleFinish()
         {
-            while (!_cycleFinishedEvent.WaitOne(200))
+            int idleMs = 0;
+            bool announcedStop = false;
+
+            while (true)
             {
                 if (_abortRequested) return;
                 ReportLiveFileProgress();
-                if (!_host.UC.GetLED(54)) break;
+
+                if (_host.UC.GetLED(LedM0Stop))
+                {
+                    // Paused inside this file. Any finish raised by the pause must not
+                    // complete the step once Cycle Start resumes it.
+                    _cycleFinishedEvent.Reset();
+                    idleMs = 0;
+                    if (!announcedStop)
+                    {
+                        announcedStop = true;
+                        SetStatus("Program stop (M0) at line " + CurrentLineText() +
+                            " - press Cycle Start to continue this file.");
+                    }
+                }
+                else
+                {
+                    announcedStop = false;
+
+                    if (_cycleFinishedEvent.WaitOne(0))
+                    {
+                        SetStatus("Cycle finished (finish event, line " + CurrentLineText() + ").");
+                        return;
+                    }
+
+                    if (_host.UC.GetLED(LedCycleRunning) || _host.UC.IsMoving())
+                        idleMs = 0;
+                    else
+                        idleMs += CyclePollMs;
+
+                    if (idleMs >= CycleIdleConfirmMs)
+                    {
+                        SetStatus("Cycle finished (cycle LED idle " + (CycleIdleConfirmMs / 1000.0).ToString("0.#") +
+                            "s, no finish event, line " + CurrentLineText() + ").");
+                        return;
+                    }
+                }
+
+                _cycleFinishedEvent.WaitOne(CyclePollMs);
             }
+        }
+
+        private string CurrentLineText()
+        {
+            try { return _host.UC.Getcurrentgcodelinenumber().ToString(); }
+            catch { return "?"; }
         }
 
         private bool WaitForOperatorConfirm(WorkflowStep step, int stepIndex, bool isGateOnly)
