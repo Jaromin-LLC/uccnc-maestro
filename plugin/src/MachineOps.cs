@@ -548,6 +548,7 @@ namespace Plugins
         // on runs that actually started and completed, so the window is generous and the
         // real signal comes from the latching start/finish events below.
         private const int CycleStartTimeoutMs = 20000;
+        private const int FileLoadTimeoutMs = 30000;
 
         public bool LoadAndRunFile(string fullPath, Action<string> status, Func<bool> isAborted, Action waitForCycleFinish,
             Action resetCycleSignals, Func<bool> cycleStarted, Func<bool> cycleFinished)
@@ -582,7 +583,17 @@ namespace Plugins
                 if (isAborted != null && isAborted()) return false;
                 _uc.Wait(50);
                 loadWait += 50;
-                if (loadWait >= 30000) break;
+                if (loadWait >= FileLoadTimeoutMs)
+                {
+                    // A half-loaded program must never be started.
+                    ShowMessage(
+                        "G-code file did not finish loading within " + (FileLoadTimeoutMs / 1000) + " seconds:\n" +
+                        System.IO.Path.GetFileName(fullPath) +
+                        "\n\nThe file was not started. Check the file and try the step again.",
+                        "Load Error", MessageBoxIcon.Error);
+                    if (status != null) status("Aborted - file load timed out.");
+                    return false;
+                }
             }
             _uc.Wait(200);
 

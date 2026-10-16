@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -40,6 +41,8 @@ namespace Plugins
         private int _activeStepIndex = -1;
         private bool _running;
         private int _currentFileTotalLines;
+        private int _currentFileEndLine = -1;
+        private int _maxLineSeen = -1;
 
         public WorkflowEngine(UCCNCplugin host, Form owner)
         {
@@ -194,6 +197,7 @@ namespace Plugins
             SaveState();
 
             bool lastStepCompleted = false;
+            bool stoppedEarly = false;
 
             try
             {
@@ -224,6 +228,7 @@ namespace Plugins
                             if (dr != DialogResult.Yes)
                             {
                                 SetStatus("Cancelled - out of order step.");
+                                stoppedEarly = true;
                                 break;
                             }
                         }
@@ -244,6 +249,7 @@ namespace Plugins
                     if (!ExecuteStep(project, i, ops))
                     {
                         RaiseStepStatus(i, StepRunStatus.Stopped);
+                        stoppedEarly = true;
                         break;
                     }
 
@@ -254,7 +260,8 @@ namespace Plugins
                         lastStepCompleted = true;
                 }
 
-                if (!_abortRequested)
+                // A stopped step leaves its own reason in the status line; don't bury it.
+                if (!_abortRequested && !stoppedEarly)
                     SetStatus("Run finished.");
             }
             catch (Exception ex)
@@ -347,6 +354,8 @@ namespace Plugins
             string fullPath = (step.file ?? "").Trim();
 
             _currentFileTotalLines = CountFileLines(fullPath);
+            _currentFileEndLine = FindProgramEndLine(fullPath);
+            _maxLineSeen = -1;
             RaiseFileProgress(0, _currentFileTotalLines);
 
             if (!ops.LoadAndRunFile(fullPath, SetStatus, () => _abortRequested, WaitForCycleFinish,
@@ -356,6 +365,8 @@ namespace Plugins
                 return false;
 
             if (_abortRequested) return false;
+
+            if (!ConfirmProgramReachedEnd(fullPath)) return false;
 
             RaiseFileProgress(_currentFileTotalLines, _currentFileTotalLines);
 
@@ -400,14 +411,16 @@ namespace Plugins
             if (FileProgressChanged != null) FileProgressChanged(current, total);
         }
 
+        // Also records the furthest line reached: UCCNC may rewind to line 0 at M30, so
+        // the line read at completion can't be trusted to show how far the file got.
         private void ReportLiveFileProgress()
         {
-            if (FileProgressChanged == null) return;
             int current;
             try { current = _host.UC.Getcurrentgcodelinenumber(); }
             catch { return; }
             if (current < 0) return;
-            FileProgressChanged(current, _currentFileTotalLines);
+            if (current > _maxLineSeen) _maxLineSeen = current;
+            if (FileProgressChanged != null) FileProgressChanged(current, _currentFileTotalLines);
         }
 
         // UCCNC LED numbers: 54 = cycle running, 229 = M0 stop active. The M1 LED (230)
@@ -425,7 +438,7 @@ namespace Plugins
 
         private void WaitForCycleFinish()
         {
-            int idleMs = 0;
+            var idle = new Stopwatch();
             bool announcedStop = false;
 
             while (true)
@@ -438,7 +451,7 @@ namespace Plugins
                     // Paused inside this file. Any finish raised by the pause must not
                     // complete the step once Cycle Start resumes it.
                     _cycleFinishedEvent.Reset();
-                    idleMs = 0;
+                    idle.Reset();
                     if (!announcedStop)
                     {
                         announcedStop = true;
@@ -457,11 +470,11 @@ namespace Plugins
                     }
 
                     if (_host.UC.GetLED(LedCycleRunning) || _host.UC.IsMoving())
-                        idleMs = 0;
-                    else
-                        idleMs += CyclePollMs;
+                        idle.Reset();
+                    else if (!idle.IsRunning)
+                        idle.Start();
 
-                    if (idleMs >= CycleIdleConfirmMs)
+                    if (idle.IsRunning && idle.ElapsedMilliseconds >= CycleIdleConfirmMs)
                     {
                         SetStatus("Cycle finished (cycle LED idle " + (CycleIdleConfirmMs / 1000.0).ToString("0.#") +
                             "s, no finish event, line " + CurrentLineText() + ").");
@@ -477,6 +490,102 @@ namespace Plugins
         {
             try { return _host.UC.Getcurrentgcodelinenumber().ToString(); }
             catch { return "?"; }
+        }
+
+        // The last few blocks (retract, M5, M30) can execute between progress polls, and
+        // UCCNC's line numbering may be off by one from the file's, so "reached the end"
+        // allows this much slack. A file abandoned mid-run is far outside it.
+        private const int EndOfFileToleranceLines = 5;
+
+        private static readonly Regex ProgramEndWord =
+            new Regex(@"(?<![A-Z])M0*(2|30)(?!\d)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        private static readonly Regex ParenComment = new Regex(@"\([^)]*\)", RegexOptions.CultureInvariant);
+
+        // Whatever signal ended the cycle (finish event or confirmed idle), the step only
+        // counts as done if the program got to its end. Otherwise hold the workflow and let
+        // the operator decide; the default answer stops rather than advancing.
+        private bool ConfirmProgramReachedEnd(string fullPath)
+        {
+            // Demo mode simulates a missing file; nothing ran, so there is nothing to check.
+            if (!File.Exists(fullPath)) return true;
+
+            ReportLiveFileProgress();
+            int reached = _maxLineSeen;
+            int end = _currentFileEndLine;
+
+            if (end >= 0 && reached >= end - EndOfFileToleranceLines)
+                return true;
+
+            string reachedText = reached >= 0 ? reached.ToString() : "unknown";
+            string endText = end >= 0 ? end.ToString() : "unknown";
+            string fileName = Path.GetFileName(fullPath);
+
+            SetStatus("HOLD - " + fileName + " reported finished at line " + reachedText +
+                ", but the program ends at line " + endText + ". Waiting for operator.");
+
+            DialogResult dr = DialogResult.No;
+            InvokeUi(() =>
+            {
+                dr = MessageBox.Show(_owner,
+                    "UCCNC reported that this file finished, but it did not reach the end of the program.\n\n" +
+                    "File: " + fileName + "\n" +
+                    "Furthest line reached: " + reachedText + "\n" +
+                    "Program ends at line: " + endText + "\n\n" +
+                    "If the machine is still running this file, let it finish or stop it before answering.\n\n" +
+                    "Did this file really run to completion?\n\n" +
+                    "Yes = continue with the next operation\n" +
+                    "No = stop the workflow here (recommended)",
+                    "Confirm Program Finished", MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
+                    MessageBoxDefaultButton.Button2);
+            });
+
+            if (dr == DialogResult.Yes)
+            {
+                SetStatus("Operator confirmed " + fileName + " finished (reached line " + reachedText +
+                    " of program end " + endText + ").");
+                return true;
+            }
+
+            SetStatus("Stopped - " + fileName + " did not reach the end of the program (line " + reachedText +
+                " of " + endText + ").");
+            return false;
+        }
+
+        // Index (0-based, matching UCCNC's line numbers) of the block that ends the program:
+        // the first M2/M30, or the last line with code if the file has neither. Blocks after
+        // M30 (e.g. subprograms) never run straight through, so they don't count. Returns -1
+        // when the file can't be read, which makes completion require operator confirmation.
+        private static int FindProgramEndLine(string path)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(path) || !File.Exists(path)) return -1;
+                int index = 0;
+                int lastCode = -1;
+                using (var reader = new StreamReader(path))
+                {
+                    string line;
+                    while ((line = reader.ReadLine()) != null)
+                    {
+                        string code = StripComments(line).Trim();
+                        if (code.Length > 0 && code != "%")
+                        {
+                            lastCode = index;
+                            if (ProgramEndWord.IsMatch(code)) return index;
+                        }
+                        index++;
+                    }
+                }
+                return lastCode;
+            }
+            catch { return -1; }
+        }
+
+        private static string StripComments(string line)
+        {
+            int semi = line.IndexOf(';');
+            if (semi >= 0) line = line.Substring(0, semi);
+            return ParenComment.Replace(line, "");
         }
 
         private bool WaitForOperatorConfirm(WorkflowStep step, int stepIndex, bool isGateOnly)
